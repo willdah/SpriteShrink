@@ -259,6 +259,11 @@ Have a question? It may be answered here! Check here before asking elsewhere for
   
 
 ---
+## AI Policy
+
+The author of this project has used AI to assist them in the coding process such as researching rust crates, verifying logic, discussing potential solutions for various problems encountered, helped refine and write documentation, etc. This project was not vibe coded. Any bad code found is the responsibility of author an not an incompetent AI that vibe coded and was blindly used. Any contributions will be verified by the author and poor quality code AI generated or not, will be denied.
+
+---
 
 ## Support and Contact
 
