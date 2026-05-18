@@ -30,3 +30,6 @@ zerocopy = { version = "0.8", default-features = false, features = ["derive"] }
 
 [build-dependencies]
 cbindgen = "0.29"
+
+[lints]
+workspace = true
