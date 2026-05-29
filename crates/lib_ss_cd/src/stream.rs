@@ -4,10 +4,7 @@ use std::path::PathBuf;
 
 //use thiserror::Error;
 
-
-use crate::lib_structs::{
-    SectorMap, SectorType
-};
+use crate::lib_structs::{SectorMap, SectorType};
 
 /*
 #[derive(Error, Debug)]
@@ -76,7 +73,6 @@ impl MultiBinStream {
     }
 }
 
-
 impl Seek for MultiBinStream {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
         let new_pos = match pos {
@@ -121,30 +117,40 @@ impl Read for MultiBinStream {
     ///   overflowing position, or if an underlying I/O error occurs (though
     ///   actual file errors are typically caught during `read`).
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        if self.virtual_pos >= self.total_len {
-            return Ok(0);
+        let mut total_read = 0;
+
+        while total_read < buf.len() && self.virtual_pos < self.total_len {
+            let file_idx = self
+                .file_boundaries
+                .iter()
+                .position(|&boundary| self.virtual_pos < boundary)
+                .unwrap_or(self.files.len() - 1);
+
+            let base_offset = if file_idx > 0 {
+                self.file_boundaries[file_idx - 1]
+            } else {
+                0
+            };
+
+            let relative_offset = self.virtual_pos - base_offset;
+            let file_end = self.file_boundaries[file_idx];
+            let bytes_left_in_file = (file_end - self.virtual_pos) as usize;
+            let bytes_left_in_buf = buf.len() - total_read;
+            let bytes_to_read = bytes_left_in_file.min(bytes_left_in_buf);
+
+            let file = &mut self.files[file_idx];
+            file.seek(SeekFrom::Start(relative_offset))?;
+
+            let bytes_read = file.read(&mut buf[total_read..total_read + bytes_to_read])?;
+            if bytes_read == 0 {
+                break;
+            }
+
+            total_read += bytes_read;
+            self.virtual_pos += bytes_read as u64;
         }
 
-        let file_idx = self
-            .file_boundaries
-            .iter()
-            .position(|&boundary| self.virtual_pos < boundary)
-            .unwrap_or(self.files.len() - 1);
-
-        let base_offset = if file_idx > 0 {
-            self.file_boundaries[file_idx - 1]
-        } else {
-            0
-        };
-
-        let relative_offset = self.virtual_pos - base_offset;
-        let file = &mut self.files[file_idx];
-        file.seek(SeekFrom::Start(relative_offset))?;
-
-        let bytes_read = file.read(buf)?;
-        self.virtual_pos += bytes_read as u64;
-
-        Ok(bytes_read)
+        Ok(total_read)
     }
 }
 /*
@@ -179,14 +185,13 @@ pub struct SectorRegionStream<'a, R: Read + Seek> {
 /// and presents their data to the caller. Seeking and reading outside the
 /// defined sector range will result in an error or an early end-of-file.
 pub struct SectorRegionStream<'a, R: Read + Seek> {
-       source: &'a mut R,
-       start_sector: u32,
-       end_sector: u32,
-       virtual_pos: u64,
-       sector_buffer: Box<[u8; 2352]>,
-       loaded_sector_idx: Option<u32>,
-   }
-
+    source: &'a mut R,
+    start_sector: u32,
+    end_sector: u32,
+    virtual_pos: u64,
+    sector_buffer: Box<[u8; 2352]>,
+    loaded_sector_idx: Option<u32>,
+}
 
 impl<'a, R: Read + Seek> SectorRegionStream<'a, R> {
     /// Creates a new `SectorRegionStream` to read from a specific range of
@@ -209,11 +214,7 @@ impl<'a, R: Read + Seek> SectorRegionStream<'a, R> {
     ///
     /// A new `SectorRegionStream` instance configured to read within the
     /// specified sector range.
-    pub fn new(
-        source: &'a mut R,
-        start_absolute_sector: u32,
-        sector_count: u32,
-    ) -> Self {
+    pub fn new(source: &'a mut R, start_absolute_sector: u32, sector_count: u32) -> Self {
         Self {
             source,
             start_sector: start_absolute_sector,
@@ -259,8 +260,7 @@ impl<'a, R: Read + Seek> SectorRegionStream<'a, R> {
 
 impl<'a, R: Read + Seek> Seek for SectorRegionStream<'a, R> {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
-        let region_size_sectors = self.end_sector
-            .saturating_sub(self.start_sector);
+        let region_size_sectors = self.end_sector.saturating_sub(self.start_sector);
         let region_size_bytes = region_size_sectors as u64 * 2352;
 
         let new_pos = match pos {
@@ -281,7 +281,6 @@ impl<'a, R: Read + Seek> Seek for SectorRegionStream<'a, R> {
         Ok(self.virtual_pos)
     }
 }
-
 
 impl<'a, R: Read + Seek> Read for SectorRegionStream<'a, R> {
     /// Reads bytes from the stream's current virtual position into the
@@ -327,8 +326,8 @@ impl<'a, R: Read + Seek> Read for SectorRegionStream<'a, R> {
             if self.loaded_sector_idx != Some(absolute_sector_to_load) {
                 if absolute_sector_to_load >= self.end_sector {
                     return Err(io::Error::other(
-                        "Internal logic error: attempted to read past region boundary"
-                    ))
+                        "Internal logic error: attempted to read past region boundary",
+                    ));
                 }
 
                 let seek_pos = absolute_sector_to_load as u64 * 2352;
@@ -341,17 +340,10 @@ impl<'a, R: Read + Seek> Read for SectorRegionStream<'a, R> {
 
             let bytes_in_buffer_available = 2352 - pos_in_sector;
             let rem_in_caller_buf = buf.len() - bytes_written_to_buf;
-            let bytes_to_copy = std::cmp::min(
-                bytes_in_buffer_available,
-                rem_in_caller_buf
-            );
+            let bytes_to_copy = std::cmp::min(bytes_in_buffer_available, rem_in_caller_buf);
 
-            let source_slice = &self.sector_buffer[
-                pos_in_sector..pos_in_sector + bytes_to_copy
-            ];
-            let dest_slice = &mut buf[
-                bytes_written_to_buf..bytes_written_to_buf + bytes_to_copy
-            ];
+            let source_slice = &self.sector_buffer[pos_in_sector..pos_in_sector + bytes_to_copy];
+            let dest_slice = &mut buf[bytes_written_to_buf..bytes_written_to_buf + bytes_to_copy];
             dest_slice.copy_from_slice(source_slice);
 
             self.virtual_pos += bytes_to_copy as u64;
@@ -382,7 +374,6 @@ pub struct UserDataStream<'a, R: Read + Seek> {
     len_of_user_data: usize,
 }
 
-
 impl<'a, R: Read + Seek> UserDataStream<'a, R> {
     /// Creates a new `UserDataStream`.
     ///
@@ -401,10 +392,7 @@ impl<'a, R: Read + Seek> UserDataStream<'a, R> {
     /// # Returns
     ///
     /// A new `UserDataStream` instance ready to be read from.
-    pub fn new(
-        source: &'a mut R,
-        sector_map: &'a SectorMap,
-    ) -> Self {
+    pub fn new(source: &'a mut R, sector_map: &'a SectorMap) -> Self {
         Self {
             source,
             sector_map,
@@ -449,18 +437,12 @@ impl<'a, R: Read + Seek> UserDataStream<'a, R> {
             let sector_type = &self.sector_map.sectors[self.cur_sec_idx as usize];
 
             let user_data_range = match sector_type {
-                SectorType::Mode1 | SectorType::Mode1Exception =>
-                    Some(16..2064),
-                SectorType::Mode2Form1 | SectorType::Mode2Form1Exception =>
-                    Some(24..2072),
-                SectorType::Mode2Form2 | SectorType::Mode2Form2Exception =>
-                    Some(24..2348),
-                SectorType::PregapMode1 | SectorType::PregapMode1Exception =>
-                    Some(16..2064),
-                SectorType::PregapMode2 | SectorType::PregapMode2Exception =>
-                    Some(24..2072),
-                SectorType::ZeroedMode1Data | SectorType::ZeroedMode2Data =>
-                    Some(0..2352),
+                SectorType::Mode1 | SectorType::Mode1Exception => Some(16..2064),
+                SectorType::Mode2Form1 | SectorType::Mode2Form1Exception => Some(24..2072),
+                SectorType::Mode2Form2 | SectorType::Mode2Form2Exception => Some(24..2348),
+                SectorType::PregapMode1 | SectorType::PregapMode1Exception => Some(16..2064),
+                SectorType::PregapMode2 | SectorType::PregapMode2Exception => Some(24..2072),
+                SectorType::ZeroedMode1Data | SectorType::ZeroedMode2Data => Some(0..2352),
                 // All other types (Audio, Pregap and PregapAudio) are skipped.
                 _ => None,
             };
@@ -483,7 +465,6 @@ impl<'a, R: Read + Seek> UserDataStream<'a, R> {
         }
     }
 }
-
 
 impl<'a, R: Read + Seek> Read for UserDataStream<'a, R> {
     /// Reads user data bytes from the `UserDataStream` into the provided
@@ -532,12 +513,9 @@ impl<'a, R: Read + Seek> Read for UserDataStream<'a, R> {
             let rem_in_caller_buf = buf.len() - bytes_written_to_buf;
             let bytes_to_copy = std::cmp::min(rem_in_sector, rem_in_caller_buf);
 
-            let source_slice = &self.sec_buffer[
-                self.pos_in_user_data..self.pos_in_user_data + bytes_to_copy
-            ];
-            let dest_slice = &mut buf[
-                bytes_written_to_buf..bytes_written_to_buf + bytes_to_copy
-            ];
+            let source_slice =
+                &self.sec_buffer[self.pos_in_user_data..self.pos_in_user_data + bytes_to_copy];
+            let dest_slice = &mut buf[bytes_written_to_buf..bytes_written_to_buf + bytes_to_copy];
             dest_slice.copy_from_slice(source_slice);
 
             bytes_written_to_buf += bytes_to_copy;
@@ -545,5 +523,60 @@ impl<'a, R: Read + Seek> Read for UserDataStream<'a, R> {
         }
 
         Ok(bytes_written_to_buf)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::{Read, Seek, SeekFrom, Write};
+    use tempfile::tempdir;
+
+    fn write_temp_file(dir: &tempfile::TempDir, name: &str, data: &[u8]) -> PathBuf {
+        let path = dir.path().join(name);
+        let mut file = File::create(&path).unwrap();
+        file.write_all(data).unwrap();
+        path
+    }
+
+    #[test]
+    fn multi_bin_stream_reads_across_file_boundary() {
+        let dir = tempdir().unwrap();
+        let first = write_temp_file(&dir, "a.bin", b"abc");
+        let second = write_temp_file(&dir, "b.bin", b"defg");
+        let mut stream = MultiBinStream::new(vec![first, second]).unwrap();
+        let mut buf = [0u8; 7];
+
+        let read = stream.read(&mut buf).unwrap();
+
+        assert_eq!(read, 7);
+        assert_eq!(&buf, b"abcdefg");
+    }
+
+    #[test]
+    fn multi_bin_stream_seek_start_then_reads_from_virtual_offset() {
+        let dir = tempdir().unwrap();
+        let first = write_temp_file(&dir, "a.bin", b"abc");
+        let second = write_temp_file(&dir, "b.bin", b"defg");
+        let mut stream = MultiBinStream::new(vec![first, second]).unwrap();
+        let mut buf = [0u8; 3];
+
+        let pos = stream.seek(SeekFrom::Start(2)).unwrap();
+        let read = stream.read(&mut buf).unwrap();
+
+        assert_eq!(pos, 2);
+        assert_eq!(read, 3);
+        assert_eq!(&buf, b"cde");
+    }
+
+    #[test]
+    fn multi_bin_stream_rejects_negative_seek() {
+        let dir = tempdir().unwrap();
+        let first = write_temp_file(&dir, "a.bin", b"abc");
+        let mut stream = MultiBinStream::new(vec![first]).unwrap();
+
+        let err = stream.seek(SeekFrom::Current(-1)).unwrap_err();
+
+        assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
     }
 }

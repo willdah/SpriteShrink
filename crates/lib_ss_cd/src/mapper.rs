@@ -4,22 +4,16 @@ use std::{
     iter::repeat_n,
 };
 
-use sprite_shrink::{
-    Hashable
-};
+use sprite_shrink::Hashable;
 
 use crate::lib_error_handling::SpriteShrinkCDError;
 
 use crate::lib_structs::{
-    ContentBlock, CueFile, CueSheet, ExceptionRegistry, ExceptionType, MsfTime,
-    RleSectorMap, SectorMap, SectorMapResult, SectorType,
-    SubHeaderEntry, SubheaderRegistry, Track, TrackType
+    ContentBlock, CueFile, CueSheet, ExceptionRegistry, ExceptionType, MsfTime, RleSectorMap,
+    SectorMap, SectorMapResult, SectorType, SubHeaderEntry, SubheaderRegistry, Track, TrackType,
 };
 
-use crate::{
-    analyze::analyze_data_sector,
-    stream::SectorRegionStream
-};
+use crate::{analyze::analyze_data_sector, stream::SectorRegionStream};
 
 use thiserror::Error;
 
@@ -29,7 +23,9 @@ pub enum MapperError {
     MissingIndex01(u8),
     #[error("The CUE sheet is empty and contains no files to map.")]
     EmptyCueSheet,
-    #[error("The number of file lengths provided ({0}) does not match the number of files in the CUE sheet ({1}).")]
+    #[error(
+        "The number of file lengths provided ({0}) does not match the number of files in the CUE sheet ({1})."
+    )]
     FileCountMismatch(usize, usize),
     #[error("Failed to read from sector provider: {0}")]
     ProviderIo(#[from] io::Error),
@@ -40,7 +36,6 @@ pub enum MapperError {
 pub trait SectorDataProvider {
     fn read_sector(&mut self, sector_index: u32) -> io::Result<[u8; 2352]>;
 }
-
 
 pub fn build_block_map<H, R>(
     rle_sector_map: &RleSectorMap,
@@ -60,18 +55,11 @@ where
             SectorType::Audio => {
                 let mut sectors_in_run_processed = 0;
                 while sectors_in_run_processed < *run_count {
-                    let segment_start =
-                        absolute_sector_offset + sectors_in_run_processed;
-                    let segment_size = std::cmp::min(
-                        AUDIO_SEGMENT_SIZE,
-                        *run_count - sectors_in_run_processed
-                    );
+                    let segment_start = absolute_sector_offset + sectors_in_run_processed;
+                    let segment_size =
+                        std::cmp::min(AUDIO_SEGMENT_SIZE, *run_count - sectors_in_run_processed);
 
-                    let mut stream = SectorRegionStream::new(
-                        source,
-                        segment_start,
-                        segment_size
-                    );
+                    let mut stream = SectorRegionStream::new(source, segment_start, segment_size);
 
                     let mut buffer = Vec::new();
                     stream.read_to_end(&mut buffer)?;
@@ -88,11 +76,8 @@ where
                 }
             }
             SectorType::PregapAudio => {
-                let mut stream = SectorRegionStream::new(
-                    source,
-                    absolute_sector_offset,
-                    *run_count
-                );
+                let mut stream =
+                    SectorRegionStream::new(source, absolute_sector_offset, *run_count);
                 let mut buffer = Vec::new();
                 stream.read_to_end(&mut buffer)?;
                 let content_hash = H::from_bytes_with_seed(&buffer);
@@ -114,19 +99,18 @@ where
     Ok(block_map)
 }
 
-
 pub fn analyze_and_map_disc(
     cue_sheet: &CueSheet,
     file_sec_count: &[u32],
     provider: &mut impl SectorDataProvider,
     subheader_registry: &SubheaderRegistry,
-    exception_registry: &ExceptionRegistry
+    exception_registry: &ExceptionRegistry,
 ) -> Result<SectorMapResult, SpriteShrinkCDError> {
-    let normalized_sheet= if cue_sheet.files.len() > 1 {
+    let normalized_sheet = if cue_sheet.files.len() > 1 {
         Cow::Owned(normalize_cue_sheet(
             cue_sheet,
             file_sec_count,
-            &cue_sheet.source_filename
+            &cue_sheet.source_filename,
         )?)
     } else {
         Cow::Borrowed(cue_sheet)
@@ -136,7 +120,8 @@ pub fn analyze_and_map_disc(
 
     let mut sectors = vec![SectorType::None; total_sectors as usize];
 
-    let tracks = &normalized_sheet.files
+    let tracks = &normalized_sheet
+        .files
         .first()
         .ok_or(MapperError::EmptyCueSheet)?
         .tracks;
@@ -165,7 +150,7 @@ pub fn analyze_and_map_disc(
         let coarse_type = match track.track_type {
             TrackType::Audio => SectorType::Audio,
             TrackType::Mode1_2352 => SectorType::Mode1,
-            TrackType::Mode2_2352 => SectorType::Mode2Form1
+            TrackType::Mode2_2352 => SectorType::Mode2Form1,
         };
 
         for i in content_start..next_track_start {
@@ -187,22 +172,18 @@ pub fn analyze_and_map_disc(
 
     for i in 0..total_sectors {
         let sector_data = provider.read_sector(i)?;
-        if sectors[i as usize] == SectorType::Mode1 ||
-            sectors[i as usize] == SectorType::Mode2Form1 ||
-            sectors[i as usize] == SectorType::PregapMode1 ||
-            sectors[i as usize] == SectorType::PregapMode2
+        if sectors[i as usize] == SectorType::Mode1
+            || sectors[i as usize] == SectorType::Mode2Form1
+            || sectors[i as usize] == SectorType::PregapMode1
+            || sectors[i as usize] == SectorType::PregapMode2
         {
-            let analysis_result = analyze_data_sector(
-                &sector_data,
-                sectors[i as usize]
-            )?;
+            let analysis_result = analyze_data_sector(&sector_data, sectors[i as usize])?;
 
             let minute = from_bcd(sector_data[12]);
             let second = from_bcd(sector_data[13]);
             let frame = from_bcd(sector_data[14]);
 
-            let header_lba = (minute as u32 * 60 * 75) +
-                (second as u32 * 75) + frame as u32;
+            let header_lba = (minute as u32 * 60 * 75) + (second as u32 * 75) + frame as u32;
 
             if header_lba >= i {
                 let detected_offset = header_lba - i;
@@ -219,14 +200,14 @@ pub fn analyze_and_map_disc(
                 }
             }
 
-
             let subheader_val = if matches!(
                 analysis_result.sector_type,
-                SectorType::Mode2Form1 | SectorType::Mode2Form2 |
-                SectorType::Mode2Form1Exception |
-                SectorType::Mode2Form2Exception |
-                SectorType::PregapMode1Exception |
-                SectorType::PregapMode2Exception
+                SectorType::Mode2Form1
+                    | SectorType::Mode2Form2
+                    | SectorType::Mode2Form1Exception
+                    | SectorType::Mode2Form2Exception
+                    | SectorType::PregapMode1Exception
+                    | SectorType::PregapMode2Exception
             ) {
                 let mut sh = [0u8; 8];
                 sh.copy_from_slice(&sector_data[16..24]);
@@ -250,7 +231,7 @@ pub fn analyze_and_map_disc(
                             subheader_index.push(SubHeaderEntry {
                                 start_lba: current_run_start,
                                 count: current_sub_count,
-                                data_id: curr_id
+                                data_id: curr_id,
                             });
                             current_sub_count = 1;
                             current_run_start = i;
@@ -259,7 +240,7 @@ pub fn analyze_and_map_disc(
                         subheader_index.push(SubHeaderEntry {
                             start_lba: current_run_start,
                             count: current_sub_count,
-                            data_id: curr_id
+                            data_id: curr_id,
                         });
                         current_subheader_id = Some(val_id);
                         current_sub_count = 1;
@@ -272,13 +253,12 @@ pub fn analyze_and_map_disc(
                 }
             }
 
-
             if let Some(data) = analysis_result.exception_data {
                 let excep_type = match analysis_result.sector_type {
                     SectorType::Mode1Exception => ExceptionType::Mode1,
                     SectorType::Mode2Form1Exception => ExceptionType::Mode2Form1,
                     SectorType::Mode2Form2Exception => ExceptionType::Mode2Form2,
-                    _ => ExceptionType::None
+                    _ => ExceptionType::None,
                 };
 
                 if excep_type != ExceptionType::None {
@@ -293,7 +273,7 @@ pub fn analyze_and_map_disc(
         subheader_index.push(SubHeaderEntry {
             start_lba: current_run_start,
             count: current_sub_count,
-            data_id: curr_id
+            data_id: curr_id,
         });
     }
 
@@ -303,17 +283,17 @@ pub fn analyze_and_map_disc(
         }
     }
 
-    Ok(SectorMapResult{
+    Ok(SectorMapResult {
         sector_map: SectorMap { sectors },
         exception_index: excep_index,
         subheader_index,
-        lba_map
+        lba_map,
     })
 }
 
-
 fn get_track_content_start(track: &Track) -> Result<u32, MapperError> {
-    track.indices
+    track
+        .indices
         .iter()
         .find(|i| i.number == 1)
         .map(|i| (i.position).to_total_frames())
@@ -321,18 +301,21 @@ fn get_track_content_start(track: &Track) -> Result<u32, MapperError> {
 }
 
 fn get_track_start_sector(track: &Track) -> Result<u32, MapperError> {
-    let index_01 = track.indices.iter()
+    let index_01 = track
+        .indices
+        .iter()
         .find(|i| i.number == 1)
         .map(|i| i.position.to_total_frames())
         .ok_or(MapperError::MissingIndex01(track.number))?;
 
-    let index_00 = track.indices.iter()
+    let index_00 = track
+        .indices
+        .iter()
         .find(|i| i.number == 0)
         .map(|i| i.position.to_total_frames());
 
     Ok(index_00.unwrap_or(index_01))
 }
-
 
 fn normalize_cue_sheet(
     source_sheet: &CueSheet,
@@ -342,8 +325,8 @@ fn normalize_cue_sheet(
     if file_sec_count.len() != source_sheet.files.len() {
         return Err(MapperError::FileCountMismatch(
             file_sec_count.len(),
-            source_sheet.files.len()
-        ))
+            source_sheet.files.len(),
+        ));
     }
 
     let mut normalized_tracks = Vec::new();
@@ -393,10 +376,7 @@ fn normalize_cue_sheet(
 /// A `SectorMap` containing a `Vec<SectorType>` where each element corresponds
 /// to the type of an individual sector on the disc.
 pub fn rle_decode_map(rle_map: &RleSectorMap) -> SectorMap {
-    let total_sectors: usize = rle_map.runs
-        .iter()
-        .map(|(count, _)| *count as usize)
-        .sum();
+    let total_sectors: usize = rle_map.runs.iter().map(|(count, _)| *count as usize).sum();
 
     let mut sectors = Vec::with_capacity(total_sectors);
 
@@ -406,7 +386,6 @@ pub fn rle_decode_map(rle_map: &RleSectorMap) -> SectorMap {
 
     SectorMap { sectors }
 }
-
 
 pub fn rle_encode_map(sector_map: &SectorMap) -> RleSectorMap {
     let mut runs: Vec<(u32, SectorType)> = Vec::new();
@@ -432,8 +411,71 @@ pub fn rle_encode_map(sector_map: &SectorMap) -> RleSectorMap {
     RleSectorMap { runs }
 }
 
-const fn from_bcd (bcd: u8) -> u8 {
+const fn from_bcd(bcd: u8) -> u8 {
     let tens = (bcd >> 4) * 10;
     let ones = bcd & 0x0F;
     tens + ones
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rle_encode_map_returns_empty_runs_for_empty_sector_map() {
+        let encoded = rle_encode_map(&SectorMap {
+            sectors: Vec::new(),
+        });
+        assert!(encoded.runs.is_empty());
+    }
+
+    #[test]
+    fn rle_encode_map_groups_adjacent_equal_sector_types() {
+        let sector_map = SectorMap {
+            sectors: vec![
+                SectorType::Mode1,
+                SectorType::Mode1,
+                SectorType::Audio,
+                SectorType::Audio,
+                SectorType::Audio,
+                SectorType::Mode2Form1,
+            ],
+        };
+
+        let encoded = rle_encode_map(&sector_map);
+
+        assert_eq!(
+            encoded.runs,
+            vec![
+                (2, SectorType::Mode1),
+                (3, SectorType::Audio),
+                (1, SectorType::Mode2Form1),
+            ]
+        );
+    }
+
+    #[test]
+    fn rle_decode_map_expands_runs_to_original_sector_map() {
+        let encoded = RleSectorMap {
+            runs: vec![
+                (2, SectorType::Mode1),
+                (1, SectorType::PregapAudio),
+                (3, SectorType::Mode2Form2),
+            ],
+        };
+
+        let decoded = rle_decode_map(&encoded);
+
+        assert_eq!(
+            decoded.sectors,
+            vec![
+                SectorType::Mode1,
+                SectorType::Mode1,
+                SectorType::PregapAudio,
+                SectorType::Mode2Form2,
+                SectorType::Mode2Form2,
+                SectorType::Mode2Form2,
+            ]
+        );
+    }
 }
