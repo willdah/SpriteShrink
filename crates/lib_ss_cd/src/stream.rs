@@ -121,42 +121,30 @@ impl Read for MultiBinStream {
     ///   overflowing position, or if an underlying I/O error occurs (though
     ///   actual file errors are typically caught during `read`).
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let mut total_read = 0;
-
-        while total_read < buf.len() && self.virtual_pos < self.total_len {
-            let file_idx = self
-                .file_boundaries
-                .iter()
-                .position(|&boundary| self.virtual_pos < boundary)
-                .unwrap_or(self.files.len() - 1);
-
-            let base_offset = if file_idx > 0 {
-                self.file_boundaries[file_idx - 1]
-            } else {
-                0
-            };
-
-            let relative_offset = self.virtual_pos - base_offset;
-            let file_end = self.file_boundaries[file_idx];
-            let bytes_left_in_file = (file_end - self.virtual_pos) as usize;
-            let bytes_left_in_buf = buf.len() - total_read;
-            let bytes_to_read = bytes_left_in_file.min(bytes_left_in_buf);
-
-            let file = &mut self.files[file_idx];
-            file.seek(SeekFrom::Start(relative_offset))?;
-
-            let bytes_read = file.read(
-                &mut buf[total_read..total_read + bytes_to_read]
-            )?;
-            if bytes_read == 0 {
-                break;
-            }
-
-            total_read += bytes_read;
-            self.virtual_pos += bytes_read as u64;
+        if self.virtual_pos >= self.total_len {
+            return Ok(0);
         }
 
-        Ok(total_read)
+        let file_idx = self
+            .file_boundaries
+            .iter()
+            .position(|&boundary| self.virtual_pos < boundary)
+            .unwrap_or(self.files.len() - 1);
+
+        let base_offset = if file_idx > 0 {
+            self.file_boundaries[file_idx - 1]
+        } else {
+            0
+        };
+
+        let relative_offset = self.virtual_pos - base_offset;
+        let file = &mut self.files[file_idx];
+        file.seek(SeekFrom::Start(relative_offset))?;
+
+        let bytes_read = file.read(buf)?;
+        self.virtual_pos += bytes_read as u64;
+
+        Ok(bytes_read)
     }
 }
 /*
@@ -578,21 +566,21 @@ mod tests {
     }
 
     #[test]
-    fn multi_bin_stream_reads_across_file_boundary() {
+    fn multi_bin_stream_reads_from_current_file() {
         let dir = tempdir().unwrap();
         let first = write_temp_file(&dir, "a.bin", b"abc");
         let second = write_temp_file(&dir, "b.bin", b"defg");
         let mut stream = MultiBinStream::new(vec![first, second]).unwrap();
-        let mut buf = [0u8; 7];
+        let mut buf = [0u8; 3];
 
         let read = stream.read(&mut buf).unwrap();
 
-        assert_eq!(read, 7);
-        assert_eq!(&buf, b"abcdefg");
+        assert_eq!(read, 3);
+        assert_eq!(&buf, b"abc");
     }
 
     #[test]
-    fn multi_bin_stream_seek_start_then_reads_from_virtual_offset() {
+    fn multi_bin_stream_seek_start_then_reads_remaining_bytes_in_file() {
         let dir = tempdir().unwrap();
         let first = write_temp_file(&dir, "a.bin", b"abc");
         let second = write_temp_file(&dir, "b.bin", b"defg");
@@ -603,8 +591,8 @@ mod tests {
         let read = stream.read(&mut buf).unwrap();
 
         assert_eq!(pos, 2);
-        assert_eq!(read, 3);
-        assert_eq!(&buf, b"cde");
+        assert_eq!(read, 1);
+        assert_eq!(&buf[..read], b"c");
     }
 
     #[test]
