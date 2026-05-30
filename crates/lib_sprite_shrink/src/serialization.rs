@@ -11,8 +11,12 @@ use std::collections::{HashMap, HashSet};
 use dashmap::DashMap;
 use thiserror::Error;
 
-use crate::lib_error_handling::{IsCancelled, SpriteShrinkError};
-use crate::lib_structs::{ChunkLocation, FileManifestParent, SSMCTocEntry, SerializedData};
+use crate::lib_error_handling::{
+    IsCancelled, SpriteShrinkError
+};
+use crate::lib_structs::{
+    ChunkLocation, FileManifestParent, SerializedData, SSMCTocEntry
+};
 
 #[derive(Error, Debug)]
 pub enum SerializationError {
@@ -40,7 +44,9 @@ pub enum SerializationError {
 /// # Returns
 ///
 /// A `Vec` containing clones of all the values from the input map.
-pub fn dashmap_values_to_vec<T, R>(input_dash: &DashMap<T, R>) -> Vec<R>
+pub fn dashmap_values_to_vec<T, R>(
+    input_dash: &DashMap<T, R>
+) -> Vec<R>
 where
     T: Eq + std::hash::Hash,
     R: Clone,
@@ -48,10 +54,7 @@ where
     // .iter() creates an iterator over the DashMap's entries.
     // .map() iterates through each entry and extracts a clone of the value.
     // .collect() assembles the cloned values into a Vec.
-    input_dash
-        .iter()
-        .map(|entry| entry.value().clone())
-        .collect()
+    input_dash.iter().map(|entry| entry.value().clone()).collect()
 }
 
 /// Serializes a chunk store and generates a corresponding index.
@@ -98,13 +101,14 @@ where
 ///   `Eq`, `Hash`, and `Display`.
 pub fn serialize_store<D, E, H>(
     sorted_hashes: &[H],
-    data_store_get_chunk_cb: &D,
+    data_store_get_chunk_cb: &D
 ) -> Result<HashMap<H, ChunkLocation>, SerializationError>
 where
     D: Fn(&[H]) -> Result<Vec<Vec<u8>>, E>,
     E: std::error::Error + Send + Sync + 'static,
     H: Copy + Eq + std::hash::Hash + std::fmt::Display,
 {
+
     let (chunk_index, _offset) = sorted_hashes.iter().try_fold(
         (
             HashMap::with_capacity(sorted_hashes.len()),
@@ -112,8 +116,8 @@ where
         ),
         |(mut index_map, mut offset), hash| {
             let data_entry = &data_store_get_chunk_cb(&[*hash])
-                .map_err(|e| SerializationError::External(e.to_string()))?
-                .remove(0);
+            .map_err(|e| SerializationError::External(e.to_string()))?
+            .remove(0);
 
             if !data_entry.is_empty() {
                 let data = data_entry;
@@ -198,13 +202,13 @@ where
 pub fn serialize_uncompressed_data<D, E, H, K>(
     file_manifest: &DashMap<String, FileManifestParent<H>>,
     data_store_key_cb: &K,
-    data_store_get_chunk_cb: &D,
+    data_store_get_chunk_cb: &D
 ) -> Result<SerializedData<H>, SpriteShrinkError>
 where
     D: Fn(&[H]) -> Result<Vec<Vec<u8>>, E> + Send + Sync + 'static,
     E: std::error::Error + IsCancelled + Send + Sync + 'static,
     H: Copy + Ord + Eq + std::hash::Hash + std::fmt::Display,
-    K: Fn() -> Result<Vec<H>, E>,
+    K: Fn() -> Result<Vec<H>, E>
 {
     let mut entries: Vec<(String, FileManifestParent<H>)> = file_manifest
         .iter()
@@ -228,9 +232,7 @@ where
             uncompressed_size: uncomp_size,
         });
 
-        manifest
-            .chunk_metadata
-            .sort_by_key(|metadata| metadata.offset);
+        manifest.chunk_metadata.sort_by_key(|metadata| metadata.offset);
 
         manifests.push(manifest);
     }
@@ -248,11 +250,11 @@ where
         .iter_mut()
         .for_each(|fmp| {
             fmp.chunk_metadata.sort_by_key(|metadata| metadata.offset);
-        });
+    });
 
     let mut chunk_freq = HashMap::new();
-    for fmp in &serialized_data.ser_file_manifest {
-        for chunk in &fmp.chunk_metadata {
+    for fmp in &serialized_data.ser_file_manifest{
+        for chunk in &fmp.chunk_metadata{
             *chunk_freq.entry(chunk.hash).or_insert(0) += 1;
         }
     }
@@ -268,8 +270,7 @@ where
                 .map(|chunk| chunk_freq.get(&chunk.hash).copied().unwrap_or(0))
                 .sum();
             (i, score)
-        })
-        .collect();
+        }).collect();
 
     /*Sorts each index, which points to the position in the FileManifestParent
     vector, in descending order of the score.*/
@@ -289,10 +290,10 @@ where
 
     /*Store the order of the chunks in order of the file with the most shared
     chunks to the least.*/
-    for (index, _score) in scored_indices {
+    for(index, _score) in scored_indices{
         let fmp = &serialized_data.ser_file_manifest[index];
-        for chunk in &fmp.chunk_metadata {
-            if seen_hashes.insert(chunk.hash) {
+        for chunk in &fmp.chunk_metadata{
+            if seen_hashes.insert(chunk.hash){
                 sorted_hashes.push(chunk.hash);
             }
         }
@@ -300,8 +301,10 @@ where
 
     serialized_data.sorted_hashes = sorted_hashes;
 
-    serialized_data.chunk_index =
-        serialize_store(&serialized_data.sorted_hashes, data_store_get_chunk_cb)?;
+    serialized_data.chunk_index = serialize_store(
+        &serialized_data.sorted_hashes,
+        data_store_get_chunk_cb
+    )?;
 
     Ok(serialized_data)
 }
@@ -309,7 +312,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{IsCancelled, SSAChunkMeta, SpriteShrinkError};
+    use crate::SSAChunkMeta;
     use std::fmt;
 
     #[derive(Debug)]
@@ -332,7 +335,9 @@ mod tests {
         }
     }
 
-    fn manifest_with_chunks(chunks: Vec<SSAChunkMeta<u64>>) -> FileManifestParent<u64> {
+    fn manifest_with_chunks(chunks: Vec<SSAChunkMeta<u64>>)
+        -> FileManifestParent<u64>
+    {
         FileManifestParent {
             chunk_count: chunks.len() as u64,
             chunk_metadata: chunks,
@@ -360,7 +365,7 @@ mod tests {
                 requested
                     .iter()
                     .map(|hash| vec![*hash as u8; (*hash / 10) as usize])
-                    .collect(),
+                    .collect()
             )
         })
         .unwrap();
@@ -375,15 +380,21 @@ mod tests {
 
     #[test]
     fn serialize_store_rejects_empty_chunk_data() {
-        let err = serialize_store(&[42u64], &|_: &[u64]| Ok::<_, TestError>(vec![Vec::new()]))
-            .unwrap_err();
+        let err = serialize_store(&[42u64], &|_: &[u64]| {
+            Ok::<_, TestError>(vec![Vec::new()])
+        })
+        .unwrap_err();
 
-        assert!(matches!(err, SerializationError::MissingChunk(message) if message == "42"));
+        assert!(
+            matches!(err, SerializationError::MissingChunk(message) if message == "42")
+        );
     }
 
     #[test]
     fn serialize_store_wraps_callback_error() {
-        let err = serialize_store(&[42u64], &|_: &[u64]| -> Result<Vec<Vec<u8>>, TestError> {
+        let err = serialize_store(&[42u64], &|_: &[u64]|
+            -> Result<Vec<Vec<u8>>, TestError>
+        {
             Err(TestError {
                 message: "callback failed",
                 cancelled: false,
@@ -420,7 +431,9 @@ mod tests {
             &file_manifest,
             &|| Ok::<_, TestError>(vec![1u64, 2u64]),
             &|hashes: &[u64]| {
-                Ok::<_, TestError>(hashes.iter().map(|hash| vec![*hash as u8]).collect())
+                Ok::<_, TestError>(
+                    hashes.iter().map(|hash| vec![*hash as u8]).collect()
+                )
             },
         )
         .unwrap();
@@ -433,16 +446,15 @@ mod tests {
 
     #[test]
     fn serialize_uncompressed_data_propagates_cancelled_key_callback() {
-        let file_manifest: DashMap<String, FileManifestParent<u64>> = DashMap::new();
+        let file_manifest: DashMap<String, FileManifestParent<u64>> =
+            DashMap::new();
 
         let err = serialize_uncompressed_data(
             &file_manifest,
-            &|| {
-                Err::<Vec<u64>, _>(TestError {
-                    message: "cancelled",
-                    cancelled: true,
-                })
-            },
+            &|| Err::<Vec<u64>, _>(TestError {
+                message: "cancelled",
+                cancelled: true,
+            }),
             &|_: &[u64]| Ok::<_, TestError>(Vec::new()),
         )
         .unwrap_err();

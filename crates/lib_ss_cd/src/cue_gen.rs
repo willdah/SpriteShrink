@@ -101,8 +101,10 @@ mod tests {
 
     #[test]
     fn generate_cue_string_writes_index_zero_for_pregap() {
-        let manifest =
-            manifest_with_runs(vec![(75, SectorType::PregapAudio), (75, SectorType::Audio)]);
+        let manifest = manifest_with_runs(vec![
+            (75, SectorType::PregapAudio),
+            (75, SectorType::Audio),
+        ]);
 
         let cue = generate_cue_string(&manifest, "disc.bin").unwrap();
 
@@ -113,7 +115,10 @@ mod tests {
 
     #[test]
     fn generate_cue_string_skips_none_sectors_but_advances_time() {
-        let manifest = manifest_with_runs(vec![(75, SectorType::None), (75, SectorType::Mode1)]);
+        let manifest = manifest_with_runs(vec![
+            (75, SectorType::None),
+            (75, SectorType::Mode1),
+        ]);
 
         let cue = generate_cue_string(&manifest, "disc.bin").unwrap();
 

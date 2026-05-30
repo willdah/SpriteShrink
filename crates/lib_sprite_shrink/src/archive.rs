@@ -7,27 +7,37 @@
 //! archive into a single byte vector ready for storage.
 
 use std::{
-    collections::HashMap,
+    {collections::{
+        HashMap},
+    },
     fmt::{Debug, Display},
     hash::Hash,
     io::{self, Read, Write},
     marker::PhantomData,
     os::raw::c_void,
     sync::{Arc, Mutex},
-    thread,
+    thread
 };
 
-use bitcode::{Encode, encode};
-use serde::Serialize;
+use bitcode::{
+    Encode, encode
+};
 use thiserror::Error;
+use serde::Serialize;
 
-use crate::{
-    IsCancelled, SpriteShrinkError,
-    ffi::ffi_types::{FFIProgress, FFIProgressType, FFIUserData},
-    lib_structs::{ChunkLocation, CompressionResult, Progress},
+
+use crate::{IsCancelled, SpriteShrinkError,
+    ffi::ffi_types::{
+    FFIProgress, FFIProgressType, FFIUserData
+    },
+    lib_structs::{
+        ChunkLocation, CompressionResult, Progress,
+    }
 };
 
-use crate::processing::{ProcessingError, build_train_samples, gen_zstd_opt_dict};
+use crate::processing::{
+    build_train_samples, gen_zstd_opt_dict, ProcessingError
+};
 
 #[derive(Error, Debug)]
 pub enum ArchiveError {
@@ -114,13 +124,16 @@ pub struct ArchiveBuilder<'a, E, H, R, W> {
 pub fn compress_with_dict(
     data_payload: &[u8],
     dict: &[u8],
-    level: &i32,
+    level: &i32
 ) -> Result<Vec<u8>, ArchiveError> {
     //Create and initiate vector for storing compressed data bytes.
     let mut compressed_data = Vec::new();
 
     //Create encoder that will process data.
-    let mut encoder = zstd::stream::Encoder::with_dictionary(&mut compressed_data, *level, dict)?;
+    let mut encoder = zstd::stream::Encoder::with_dictionary(
+        &mut compressed_data,
+        *level,
+        dict)?;
 
     //Use encoder to compress the data payload.
     encoder.write_all(data_payload)?;
@@ -226,10 +239,12 @@ where
     /*Create channels for sending/receiving to compressor info limited by
     PREFETCH_HIGH_THRESHOLD.
     This acts as the FIFO job buffer.*/
-    let (to_compress_tx, to_compress_rx) = flume::bounded::<(H, Vec<u8>)>(PREFETCH_HIGH_THRESHOLD);
+    let (to_compress_tx, to_compress_rx) =
+        flume::bounded::<(H, Vec<u8>)>(PREFETCH_HIGH_THRESHOLD);
 
     //Create channels for sending/receiving from compressor.
-    let (from_compress_tx, from_compress_rx) = flume::unbounded::<(H, Vec<u8>)>();
+    let (from_compress_tx, from_compress_rx) =
+        flume::unbounded::<(H, Vec<u8>)>();
 
     //Error channels
     let (err_tx, err_rx) = std::sync::mpsc::channel::<ArchiveError>();
@@ -262,12 +277,16 @@ where
             /*Workers loop until the to_compress channel is empty and
             disconnected.*/
             while let Ok((hash, data)) = to_compress_rx_clone.recv() {
-                match compress_with_dict(&data, &dictionary_clone, &compression_level) {
+                match compress_with_dict(
+                    &data,
+                    &dictionary_clone,
+                    &compression_level
+                ) {
                     Ok(compressed_data) => {
-                        if from_compress_tx_clone
-                            .send((hash, compressed_data))
-                            .is_err()
-                        {
+                        if from_compress_tx_clone.send((
+                            hash,
+                            compressed_data
+                        )).is_err() {
                             //The I/O thread has terminated; exit gracefully.
                             break;
                         }
@@ -319,36 +338,37 @@ where
         /*Loop that runs until all chunks have been sent to the host
         application to be written.*/
         while write_cursor < total_chunks {
+
             //If the to_compress_tx job buffer is below the threshold.
             if to_compress_tx.len() < PREFETCH_LOW_THRESHOLD &&
                 //and if the read_cursor is below total chunks
-                read_cursor < total_chunks
-            {
-                //Calculate how much chunk data to get.
-                let end = (read_cursor + PREFETCH_HIGH_THRESHOLD).min(total_chunks);
-                //Generate list of hashes to retrieve.
-                let hashes_to_read = &sha_clone[read_cursor..end];
+                read_cursor < total_chunks {
+                    //Calculate how much chunk data to get.
+                    let end = (read_cursor + PREFETCH_HIGH_THRESHOLD)
+                        .min(total_chunks);
+                    //Generate list of hashes to retrieve.
+                    let hashes_to_read = &sha_clone[read_cursor..end];
 
-                let chunks = match chunk_list_read_cb(hashes_to_read) {
-                    Ok(chunks) => chunks,
-                    Err(e) => {
-                        if e.is_cancelled() {
-                            return Err(ArchiveError::Cancelled);
+                    let chunks = match chunk_list_read_cb(hashes_to_read) {
+                        Ok(chunks) => chunks,
+                        Err(e) => {
+                            if e.is_cancelled() {
+                                return Err(ArchiveError::Cancelled);
+                            }
+                            return Err(ArchiveError::External(e.to_string()));
                         }
-                        return Err(ArchiveError::External(e.to_string()));
-                    }
-                };
+                    };
 
-                //Use callback to receive chunk data.
-                for chunk in chunks {
-                    if to_compress_tx.send(chunk).is_err() {
-                        //State if error occurred.
-                        return Err(ArchiveError::WorkerError(
-                            "Worker pool terminated unexpectedly.".to_string(),
-                        ));
+                    //Use callback to receive chunk data.
+                    for chunk in chunks {
+                        if to_compress_tx.send(chunk).is_err() {
+                            //State if error occurred.
+                            return Err(ArchiveError::WorkerError(
+                                "Worker pool terminated unexpectedly."
+                                .to_string()));
+                        }
+                        read_cursor = end;
                     }
-                    read_cursor = end;
-                }
             }
 
             //Match for receiving compressed data.
@@ -358,18 +378,16 @@ where
                     //Add to reordering buffer.
                     reordering_buffer.insert(hash, compressed_data);
                     let buf_cap = reordering_buffer.capacity();
-                    if max_buffer_size < buf_cap {
+                    if max_buffer_size < buf_cap{
                         max_buffer_size = buf_cap;
                     };
                 }
                 //Else catch error.
                 Err(_) => {
                     if write_cursor < total_chunks {
-                        return Err(ArchiveError::WorkerError(
+                         return Err(ArchiveError::WorkerError(
                             "Worker pool finished but not all chunks \
-                            were processed."
-                                .to_string(),
-                        ));
+                            were processed.".to_string()));
                     }
                     break;
                 }
@@ -383,32 +401,35 @@ where
                 //If there is data in the reordering buffer
                 if let Some(data_to_write) = reordering_buffer
                     //And if the next hash is found, remove the key and data
-                    .remove(&next_hash_to_write)
-                {
-                    //Calculate the length of the compressed data
-                    let data_len = data_to_write.len() as u64;
+                    .remove(&next_hash_to_write) {
+                        //Calculate the length of the compressed data
+                        let data_len = data_to_write.len() as u64;
 
-                    let mut ci_clone = chunk_index_clone.lock().unwrap();
+                        let mut ci_clone = chunk_index_clone
+                            .lock()
+                            .unwrap();
 
-                    /*Send the compressed data to be written by the host
-                    application*/
-                    chunk_write_cb(&data_to_write)
-                        .map_err(|e| ArchiveError::External(e.to_string()))?;
+                        /*Send the compressed data to be written by the host
+                        application*/
+                        chunk_write_cb(&data_to_write)
+                            .map_err(
+                                |e| ArchiveError::External(e.to_string())
+                            )?;
 
-                    //Incrment write cursor.
-                    write_cursor += 1;
+                        //Incrment write cursor.
+                        write_cursor += 1;
 
-                    //Add chunk location data to chunk index.
-                    ci_clone.push((
-                        next_hash_to_write,
-                        ChunkLocation {
-                            offset,
-                            compressed_length: data_len as u32,
-                        },
-                    ));
-                    //Increment offset
-                    offset += data_len;
-                } else {
+                        //Add chunk location data to chunk index.
+                        ci_clone.push((
+                            next_hash_to_write,
+                            ChunkLocation {
+                                offset,
+                                compressed_length: data_len as u32,
+                            }
+                        ));
+                        //Increment offset
+                        offset += data_len;
+                    } else {
                     //If the next chunk is not available, break loop.
                     break;
                 }
@@ -430,9 +451,7 @@ where
 
     //Join all threads and propogate any errors.
     for handle in worker_handles {
-        handle
-            .join()
-            .expect("A compression worker thread panicked.");
+        handle.join().expect("A compression worker thread panicked.");
     }
 
     //The final result is the result from our I/O thread, propogate if needed.
@@ -450,7 +469,8 @@ where
 impl<'a, E, H, R, W> ArchiveBuilder<'a, E, H, R, W>
 where
     E: std::error::Error + IsCancelled + Send + Sync + 'static,
-    H: Copy + Debug + Encode + Eq + Hash + Serialize + Send + Sync + 'static + Display + Ord,
+    H: Copy + Debug + Encode + Eq + Hash + Serialize + Send + Sync + 'static + Display
+        + Ord,
     R: Fn(&[H]) -> Result<Vec<Vec<u8>>, E> + Send + Sync + 'static,
     W: FnMut(&[u8], bool) -> Result<(), E> + Send + Sync + 'static,
 {
@@ -505,6 +525,7 @@ where
         self
     }
 
+
     pub fn worker_threads(&mut self, threads: usize) -> &mut Self {
         self.worker_threads = threads;
         self
@@ -530,12 +551,15 @@ where
 
     /// Sets a callback function for progress reporting when called via C.
     pub fn with_c_progress(
-        &mut self,
-        callback: CProgressCallback,
-        user_data: *mut c_void,
-    ) -> &mut Self {
-        self.c_progress_callback = Some((callback, FFIUserData(user_data)));
-        self
+            &mut self,
+            callback: CProgressCallback,
+            user_data: *mut c_void
+        ) -> &mut Self {
+            self.c_progress_callback = Some((
+                callback,
+                FFIUserData(user_data)
+            ));
+            self
     }
 
     /// Consumes the builder and returns the final archive as a byte vector.
@@ -568,7 +592,7 @@ where
             opt_dict,
             progress_callback,
             c_progress_callback,
-            _error_type,
+            _error_type
         } = self;
 
         let get_chunk_data_arc = Arc::new(get_chunk_data);
@@ -586,23 +610,23 @@ where
                     let ffi_progress = match progress {
                         Progress::GeneratingDictionary => FFIProgress {
                             ty: FFIProgressType::GeneratingDictionary,
-                            total_chunks: 0,
+                            total_chunks: 0
                         },
                         Progress::DictionaryDone => FFIProgress {
                             ty: FFIProgressType::DictionaryDone,
-                            total_chunks: 0,
+                            total_chunks: 0
                         },
-                        Progress::Compressing { total_chunks } => FFIProgress {
+                        Progress::Compressing {total_chunks} => FFIProgress {
                             ty: FFIProgressType::Compressing,
-                            total_chunks,
+                            total_chunks
                         },
                         Progress::ChunkCompressed => FFIProgress {
                             ty: FFIProgressType::ChunkCompressed,
-                            total_chunks: 0,
+                            total_chunks: 0
                         },
                         Progress::Finalizing => FFIProgress {
                             ty: FFIProgressType::Finalizing,
-                            total_chunks: 0,
+                            total_chunks: 0
                         },
                     };
                     callback(ffi_progress, user_data.0);
@@ -617,27 +641,25 @@ where
             sorted_hashes,
             total_size,
             dictionary_size as usize,
-            get_chunk_data_arc.as_ref(),
+            get_chunk_data_arc.as_ref()
         )?;
 
         //Make dictionary from sorted data.
         let mut _dictionary: Vec<u8> = Vec::new();
 
-        if opt_dict {
+        if opt_dict{
             _dictionary = gen_zstd_opt_dict(
-                &samples_for_dict,
-                &sample_sizes,
-                dictionary_size as usize,
-                worker_threads,
-                compression_level,
-            )?;
+            &samples_for_dict,
+            &sample_sizes,
+            dictionary_size as usize,
+            worker_threads,
+            compression_level)?;
         } else {
             _dictionary = zstd::dict::from_continuous(
-                &samples_for_dict,
-                &sample_sizes,
-                dictionary_size as usize, //Dictionary size in bytes
-            )
-            .map_err(|e| ArchiveError::ZstdError(e.to_string()))?;
+            &samples_for_dict,
+            &sample_sizes,
+            dictionary_size as usize, //Dictionary size in bytes
+            ).map_err(|e| ArchiveError::ZstdError(e.to_string()))?;
         }
 
         //Samples are no longer needed.
@@ -651,11 +673,12 @@ where
             let get_chunk_data_arc = Arc::new(get_chunk_data_arc);
             move |hashes: &[H]| -> Result<Vec<(H, Vec<u8>)>, E> {
                 let ret_chunks = (get_chunk_data_arc)(hashes)?;
-                let mut chunk_pairs: Vec<(H, Vec<u8>)> = Vec::with_capacity(ret_chunks.len());
+                let mut chunk_pairs: Vec<(H, Vec<u8>)> =
+                    Vec::with_capacity(ret_chunks.len());
 
-                for (index, chunk) in ret_chunks.iter().enumerate() {
+                for (index, chunk) in ret_chunks.iter().enumerate(){
                     chunk_pairs.push((hashes[index], chunk.clone()));
-                }
+                };
 
                 Ok(chunk_pairs)
             }
@@ -674,10 +697,13 @@ where
 
                 Ok(())
             }
+
         };
 
         report_progress(Progress::Compressing {
-            total_chunks: (sorted_hashes.len() as u64),
+            total_chunks: (
+                sorted_hashes.len() as u64
+            )
         });
 
         let chunk_index = compress_chunks(
@@ -686,7 +712,7 @@ where
             sorted_hashes,
             compression_level,
             get_chunk_data_cb,
-            write_chunk_data_cb,
+            write_chunk_data_cb
         )?;
 
         //Flush remaining buffer to disk
@@ -719,7 +745,7 @@ where
 
         let mut comp_data = Vec::with_capacity(
             //file_header.data_offset as usize + //bin_file_manifest.len() as usize
-            _dictionary.len() + enc_chunk_index.len() as usize,
+                 _dictionary.len() + enc_chunk_index.len() as usize
         );
 
         //final_data.extend_from_slice(file_header.as_bytes());
@@ -734,7 +760,7 @@ where
             dictionary: _dictionary,
             dictionary_size,
             enc_chunk_index,
-            enc_chunk_index_size,
+            enc_chunk_index_size
         })
     }
 }
@@ -759,11 +785,13 @@ where
 /// * The decompression process fails while reading the compressed data.
 pub fn decompress_chunk(
     comp_chunk_data: &[u8],
-    dictionary: &[u8],
+    dictionary: &[u8]
 ) -> Result<Vec<u8>, SpriteShrinkError> {
     /*Create a zstd decoder with the prepared dictionary from the file
     archive.*/
-    let mut decoder = zstd::stream::Decoder::with_dictionary(comp_chunk_data, dictionary)?;
+    let mut decoder = zstd::stream::Decoder::with_dictionary(
+        comp_chunk_data,
+        dictionary)?;
 
     //Decompress the data into a new vector.
     let mut decompressed_chunk_data = Vec::new();

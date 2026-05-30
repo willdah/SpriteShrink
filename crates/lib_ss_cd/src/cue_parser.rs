@@ -1,8 +1,11 @@
-use crate::lib_structs::{CueFile, CueSheet, MsfTime, Track, TrackIndex, TrackType};
+use crate::lib_structs::{
+    CueSheet, CueFile, Track, TrackType, TrackIndex, MsfTime
+};
 
 use once_cell::sync::Lazy;
 use regex::Regex;
 use thiserror::Error;
+
 
 #[derive(Error, Debug, PartialEq, Eq)]
 pub enum ParseError {
@@ -24,24 +27,44 @@ pub enum ParseError {
     UnsupportedFileType(String),
 }
 
-static RE_FILE: Lazy<Regex> = Lazy::new(|| Regex::new(r#"^FILE\s+"([^"]+)"\s+(\w+)"#).unwrap());
-static RE_TRACK: Lazy<Regex> = Lazy::new(|| Regex::new(r"^TRACK\s+(\d+)\s+([\w/]+)").unwrap());
-static RE_INDEX: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"INDEX (\d+) (\d{2}):(\d{2}):(\d{2})").unwrap());
+static RE_FILE: Lazy<Regex> = Lazy::new(
+    || Regex::new(r#"^FILE\s+"([^"]+)"\s+(\w+)"#).unwrap()
+);
+static RE_TRACK: Lazy<Regex> = Lazy::new(
+    || Regex::new(r"^TRACK\s+(\d+)\s+([\w/]+)").unwrap()
+);
+static RE_INDEX: Lazy<Regex> = Lazy::new(
+    || Regex::new(r"INDEX (\d+) (\d{2}):(\d{2}):(\d{2})").unwrap()
+);
 
-fn parse_track_type(track: &str) -> Result<TrackType, ParseError> {
+
+fn parse_track_type(
+    track: &str,
+) -> Result<TrackType, ParseError> {
     match track.to_uppercase().as_str() {
-        "AUDIO" => Ok(TrackType::Audio),
-        "MODE1/2352" => Ok(TrackType::Mode1_2352),
-        "MODE2/2352" => Ok(TrackType::Mode2_2352),
-        _ => Err(ParseError::InvalidTrackType(track.to_string())),
+        "AUDIO" => {
+            Ok(TrackType::Audio)
+        }
+        "MODE1/2352" => {
+            Ok(TrackType::Mode1_2352)
+        }
+        "MODE2/2352" => {
+            Ok(TrackType::Mode2_2352)
+        }
+        _ => {
+            Err(ParseError::InvalidTrackType(track.to_string()))
+        }
     }
 }
 
-pub fn parse_cue(source_filename: &str, content: &str) -> Result<CueSheet, ParseError> {
+
+pub fn parse_cue(
+    source_filename: &str,
+    content: &str
+) -> Result<CueSheet, ParseError> {
     let mut cue_sheet = CueSheet {
         source_filename: source_filename.chars().take(255).collect(),
-        files: Vec::new(),
+        files: Vec::new()
     };
     let mut current_file: Option<CueFile> = None;
     let mut current_track: Option<Track> = None;
@@ -53,30 +76,31 @@ pub fn parse_cue(source_filename: &str, content: &str) -> Result<CueSheet, Parse
         }
 
         if let Some(caps) = RE_INDEX.captures(trimmed) {
-            let cur_track = current_track.as_mut().ok_or(ParseError::MissingTrack)?;
+            let cur_track = current_track
+                .as_mut()
+                .ok_or(ParseError::MissingTrack)?;
             if let (Some(num), Some(min), Some(sec), Some(fra)) =
                 (caps.get(1), caps.get(2), caps.get(3), caps.get(4))
             {
                 let number: u8 = num
                     .as_str()
                     .parse()
-                    .map_err(|_| ParseError::ParseIntError(num.as_str().to_string()))?;
+                    .map_err(|_| ParseError::ParseIntError(
+                        num.as_str().to_string()
+                    ))?;
 
                 let msf = parse_msf(min.as_str(), sec.as_str(), fra.as_str())?;
 
-                cur_track.indices.push(TrackIndex {
-                    number,
-                    position: msf,
-                });
+                cur_track.indices.push(TrackIndex { number, position: msf });
+
             }
-        } else if let Some(caps) = RE_TRACK.captures(trimmed)
-            && let (Some(num_match), Some(type_match)) = (caps.get(1), caps.get(2))
+        } else if let Some(caps) = RE_TRACK.captures(trimmed) &&
+            let (Some(num_match), Some(type_match)) = (caps.get(1), caps.get(2))
         {
             if let Some(track) = current_track.take() {
                 current_file
                     .as_mut()
-                    .ok_or(ParseError::MissingFile)?
-                    .tracks
+                    .ok_or(ParseError::MissingFile)?.tracks
                     .push(track);
             }
             if current_file.is_none() {
@@ -94,16 +118,15 @@ pub fn parse_cue(source_filename: &str, content: &str) -> Result<CueSheet, Parse
             current_track = Some(Track {
                 number,
                 track_type,
-                indices: Vec::new(),
+                indices: Vec::new()
             });
-        } else if let Some(caps) = RE_FILE.captures(trimmed)
-            && let (Some(name_match), Some(type_match)) = (caps.get(1), caps.get(2))
+        } else if let Some(caps) = RE_FILE.captures(trimmed) &&
+            let (Some(name_match), Some(type_match)) = (caps.get(1), caps.get(2))
         {
             if let Some(track) = current_track.take() {
                 current_file
                     .as_mut()
-                    .ok_or(ParseError::MissingFile)?
-                    .tracks
+                    .ok_or(ParseError::MissingFile)?.tracks
                     .push(track);
             }
             if let Some(file) = current_file.take() {
@@ -112,12 +135,14 @@ pub fn parse_cue(source_filename: &str, content: &str) -> Result<CueSheet, Parse
 
             let file_type = type_match.as_str();
             if file_type.to_uppercase() != "BINARY" {
-                return Err(ParseError::UnsupportedFileType(file_type.to_string()));
+                return Err(
+                    ParseError::UnsupportedFileType(file_type.to_string())
+                );
             }
 
             current_file = Some(CueFile {
                 name: name_match.as_str().to_string(),
-                tracks: Vec::new(),
+                tracks: Vec::new()
             });
         }
     }
@@ -125,9 +150,7 @@ pub fn parse_cue(source_filename: &str, content: &str) -> Result<CueSheet, Parse
     if let Some(track) = current_track.take() {
         current_file
             .as_mut()
-            .ok_or(ParseError::MissingFile)?
-            .tracks
-            .push(track);
+            .ok_or(ParseError::MissingFile)?.tracks.push(track);
     }
 
     if let Some(file) = current_file.take() {
@@ -137,7 +160,12 @@ pub fn parse_cue(source_filename: &str, content: &str) -> Result<CueSheet, Parse
     Ok(cue_sheet)
 }
 
-fn parse_msf(minute_str: &str, second_str: &str, frame_str: &str) -> Result<MsfTime, ParseError> {
+
+fn parse_msf(
+    minute_str: &str,
+    second_str: &str,
+    frame_str: &str
+) -> Result<MsfTime, ParseError> {
     let minute: u8 = minute_str
         .parse()
         .map_err(|_| ParseError::ParseIntError(minute_str.to_string()))?;
@@ -152,21 +180,16 @@ fn parse_msf(minute_str: &str, second_str: &str, frame_str: &str) -> Result<MsfT
         return Err(ParseError::InvalidTimestamp(
             minute_str.to_string(),
             second_str.to_string(),
-            frame_str.to_string(),
+            frame_str.to_string()
         ));
     }
 
-    Ok(MsfTime {
-        minute,
-        second,
-        frame,
-    })
+    Ok(MsfTime { minute, second, frame })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::lib_structs::TrackType;
 
     #[test]
     fn parse_cue_accepts_multiple_files_and_tracks() {
@@ -191,15 +214,11 @@ mod tests {
         assert_eq!(sheet.files[0].tracks[0].track_type, TrackType::Mode1_2352);
         assert_eq!(sheet.files[0].tracks[1].track_type, TrackType::Audio);
         assert_eq!(
-            sheet.files[0].tracks[1].indices[0]
-                .position
-                .to_total_frames(),
+            sheet.files[0].tracks[1].indices[0].position.to_total_frames(),
             150
         );
         assert_eq!(
-            sheet.files[0].tracks[1].indices[1]
-                .position
-                .to_total_frames(),
+            sheet.files[0].tracks[1].indices[1].position.to_total_frames(),
             300
         );
         assert_eq!(sheet.files[1].tracks[0].track_type, TrackType::Mode2_2352);
@@ -239,7 +258,11 @@ mod tests {
         let err = parse_cue("bad.cue", content).unwrap_err();
         assert_eq!(
             err,
-            ParseError::InvalidTimestamp("00".to_string(), "60".to_string(), "00".to_string())
+            ParseError::InvalidTimestamp(
+                "00".to_string(),
+                "60".to_string(),
+                "00".to_string()
+            )
         );
     }
 

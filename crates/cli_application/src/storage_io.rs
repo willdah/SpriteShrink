@@ -15,17 +15,24 @@ use std::{
     path::{Path, PathBuf},
     process::id,
     sync::{Arc, Mutex},
-    time::SystemTime,
+    time::SystemTime
 };
 
 use dashmap::DashMap;
 use directories::ProjectDirs;
 use sprite_shrink::SSMCFormatData;
-use tracing::{debug, error, warn};
+use tracing::{
+    debug,
+    error,
+    warn
+};
 
 use crate::{
-    cli_types::{APPIDENTIFIER, CacheBackend, CacheInfo, LocationData, SpriteShrinkConfig},
-    error_handling::CliError,
+    cli_types::{
+        APPIDENTIFIER, CacheBackend, CacheInfo, LocationData,
+        SpriteShrinkConfig
+    },
+    error_handling::CliError
 };
 
 /// A string literal representing the default, commented configuration file.
@@ -37,7 +44,8 @@ use crate::{
 /// Its primary purpose is to provide a user-friendly template, with each
 /// option explained, so that users can easily understand and customize their
 /// settings.
-const DEFAULT_CONFIG_WITH_COMMENTS: &str = r#"# Sets the numerical compression level.
+const DEFAULT_CONFIG_WITH_COMMENTS:
+&str = r#"# Sets the numerical compression level.
 # Default = 19
 compression_level = 19
 
@@ -127,7 +135,9 @@ log_level = "error"
 fn is_regular_file(path: &Path) -> bool {
     // Get file metadata without following symlinks from system storage.
     fs::symlink_metadata(path)
-        .map(|m| m.file_type().is_file())
+        .map(|m| {
+            m.file_type().is_file()
+        })
         .unwrap_or(false)
 }
 
@@ -146,7 +156,9 @@ fn is_regular_file(path: &Path) -> bool {
 /// A `Result` containing a tuple with two `Vec<PathBuf>`:
 /// - The first vector contains all valid paths to files.
 /// - The second vector contains all valid paths to directories.
-pub fn organize_paths(input_paths: &[PathBuf]) -> Result<(Vec<PathBuf>, Vec<PathBuf>), CliError> {
+pub fn organize_paths(
+    input_paths: &[PathBuf],
+) -> Result<(Vec<PathBuf>, Vec<PathBuf>), CliError> {
     //Create vector to store file paths.
     let mut file_paths = Vec::new();
 
@@ -184,26 +196,26 @@ pub fn organize_paths(input_paths: &[PathBuf]) -> Result<(Vec<PathBuf>, Vec<Path
 /// A `Result` which is:
 /// - `Ok(Vec<PathBuf>)` containing a list of all regular files found.
 /// - `Err(CliError)` if reading any of the directories fails.
-pub fn files_from_dirs(dir_paths: &[PathBuf]) -> Result<Vec<PathBuf>, CliError> {
+pub fn files_from_dirs(
+    dir_paths: &[PathBuf]
+) -> Result<Vec<PathBuf>, CliError> {
     /*Create mutable vector file_paths and then for each path in dir_paths:
     - Read the directory for entries. or each entry found:
         - Check if each entry is a file.
         - If yes add that path to the file_path vector.*/
-    dir_paths
-        .iter()
-        .try_fold(Vec::new(), |mut file_paths, dir_path| {
-            for entry_result in fs::read_dir(dir_path)? {
-                let entry = entry_result?;
-                let path = entry.path();
-                if is_regular_file(&path) {
-                    file_paths.push(path);
-                } else {
-                    warn!("Ignoring symbolic link: {}", path.display());
-                }
+    dir_paths.iter().try_fold(Vec::new(), |mut file_paths, dir_path| {
+        for entry_result in fs::read_dir(dir_path)? {
+            let entry = entry_result?;
+            let path = entry.path();
+            if is_regular_file(&path) {
+                file_paths.push(path);
+            } else {
+                warn!("Ignoring symbolic link: {}", path.display());
             }
-            //Return vector of file paths.
-            Ok(file_paths)
-        })
+        }
+        //Return vector of file paths.
+        Ok(file_paths)
+    })
 }
 
 /// Reads a specific segment of a file into a byte vector.
@@ -227,13 +239,13 @@ pub fn files_from_dirs(dir_paths: &[PathBuf]) -> Result<Vec<PathBuf>, CliError> 
 pub fn read_file_data(
     filepath: &Path,
     data_index: u64,
-    data_length: usize,
+    data_length: usize
 ) -> Result<Vec<u8>, CliError> {
     //Open file, but don't read whole file data into memory.
     let mut file = File::open(filepath)?;
 
     //Create mutable vector the size of the data length to be read.
-    let mut file_buffer: Vec<u8> = vec![0; data_length];
+    let mut file_buffer: Vec<u8> =  vec![0; data_length];
 
     //Offset the start of where the read will begin.
     file.seek(SeekFrom::Start(data_index))?;
@@ -281,7 +293,7 @@ pub fn read_file_data(
 pub fn write_final_archive(
     output_path: &Path,
     tmp_file_path: &Path,
-    data: &[u8],
+    data: &[u8]
 ) -> Result<(), CliError> {
     /*Check if the parent directory of the target output exists,
     if not create it.*/
@@ -296,7 +308,9 @@ pub fn write_final_archive(
     let mut tmp_file = File::open(tmp_file_path)?;
 
     //Set the file open options to append data to the written header
-    let mut final_file = OpenOptions::new().append(true).open(output_path)?;
+    let mut final_file = OpenOptions::new()
+        .append(true)
+        .open(output_path)?;
 
     //Copy the tmp file data to the end of the .ssmc file.
     copy(&mut tmp_file, &mut final_file)?;
@@ -340,7 +354,9 @@ pub fn load_config() -> Result<SpriteShrinkConfig, CliError> {
     let app_name = &APPIDENTIFIER.application;
 
     //Get the confy config_path for where the config will be stored.
-    let config_path = confy::get_configuration_file_path(app_name, APPIDENTIFIER.config_name)?;
+    let config_path = confy::get_configuration_file_path(
+        app_name,
+        APPIDENTIFIER.config_name)?;
 
     /*Check if the config exists.
     If it does not create and fill that config with a default commented
@@ -354,7 +370,7 @@ pub fn load_config() -> Result<SpriteShrinkConfig, CliError> {
     }
 
     //Load config from disk.
-    match confy::load(app_name, APPIDENTIFIER.config_name) {
+    match confy::load(app_name, APPIDENTIFIER.config_name){
         Ok(cfg) => Ok(cfg),
         Err(e) => Err(CliError::from(e)),
     }
@@ -420,10 +436,12 @@ pub fn append_data_to_file(path: &Path, data: &[u8]) -> Result<(), CliError> {
 /// This function will return an `Err` if `fs::metadata` fails for any of the
 /// provided paths, for example, if a file does not exist or the application
 /// lacks the necessary permissions to read it.
-pub fn calc_tot_input_size(file_paths: &[PathBuf]) -> Result<u64, CliError> {
+pub fn calc_tot_input_size(
+    file_paths: &[PathBuf],
+) -> Result<u64, CliError> {
     let mut size_sum: u64 = 0;
 
-    for path in file_paths {
+    for path in file_paths{
         let metadata = fs::metadata(path)?;
         size_sum += metadata.len();
     }
@@ -461,7 +479,9 @@ pub fn calc_tot_input_size(file_paths: &[PathBuf]) -> Result<u64, CliError> {
 /// This function can return an error if it encounters issues with file
 /// system operations, such as a lack of permissions to read the log
 /// directory or delete files within it.
-pub fn cleanup_old_logs(retention_days: u16) -> Result<(), CliError> {
+pub fn cleanup_old_logs(
+    retention_days: u16
+) -> Result<(), CliError> {
     if retention_days == 0 {
         //A value of 0 means logs are retained indefinitely.
         return Ok(());
@@ -470,8 +490,7 @@ pub fn cleanup_old_logs(retention_days: u16) -> Result<(), CliError> {
     let proj_dirs = ProjectDirs::from(
         APPIDENTIFIER.qualifier,
         APPIDENTIFIER.organization,
-        APPIDENTIFIER.application,
-    )
+        APPIDENTIFIER.application)
     .expect("Failed to find a valid project directory.");
 
     let mut log_dir = PathBuf::from(proj_dirs.data_local_dir());
@@ -483,23 +502,23 @@ pub fn cleanup_old_logs(retention_days: u16) -> Result<(), CliError> {
 
     let now = SystemTime::now();
     let retention_duration = std::time::Duration::from_secs(
-        retention_days as u64 * 24 * 60 * 60, //Convert to secs
+        retention_days as u64 * 24 * 60 * 60 //Convert to secs
     );
 
     for log in read_dir(log_dir)? {
         let log = log?;
         let path = log.path();
 
-        if path.is_file()
-            && path.to_string_lossy().contains("debug.log")
-            && let Ok(metadata) = metadata(&path)
-            && let Ok(created_time) = metadata.modified()
-            && let Ok(age) = now.duration_since(created_time)
-            && age > retention_duration
-        {
-            remove_file(&path)?;
-        }
+        if path.is_file() &&
+            path.to_string_lossy().contains("debug.log") &&
+            let Ok(metadata) = metadata(&path) &&
+            let Ok(created_time) = metadata.modified() &&
+            let Ok(age) = now.duration_since(created_time) &&
+            age > retention_duration {
+                remove_file(&path)?;
+            }
     }
+
 
     Ok(())
 }
@@ -525,28 +544,26 @@ pub fn get_cache_paths() -> CacheInfo {
     let cache_dir = ProjectDirs::from(
         APPIDENTIFIER.qualifier,
         APPIDENTIFIER.organization,
-        APPIDENTIFIER.application,
-    )
+        APPIDENTIFIER.application)
     .unwrap()
     .cache_dir()
     .to_path_buf();
 
-    let cache_path = cache_dir
-        .clone()
+    let cache_path = cache_dir.clone()
         .join(format!("{pid}"))
         .with_extension("tmp");
 
-    let at_cache_path = cache_dir
-        .clone()
+    let at_cache_path = cache_dir.clone()
         .join(format!("auto_tune_{pid}"))
         .with_extension("tmp");
 
     CacheInfo {
         cache_path,
         at_cache_path,
-        id: pid,
+        id: pid
     }
 }
+
 
 pub struct TempCache<H: Hash + Eq> {
     backend: Arc<Mutex<CacheBackend<H>>>,
@@ -555,9 +572,10 @@ pub struct TempCache<H: Hash + Eq> {
 impl<H: Copy + Display + Eq + Hash + Ord + Send + Sync + 'static> TempCache<H> {
     pub fn new(file_path: PathBuf, use_in_memory: bool) -> io::Result<Self> {
         let backend = if use_in_memory {
-            CacheBackend::InMemory {
+
+            CacheBackend::InMemory{
                 map: Arc::new(DashMap::new()),
-                data_size: 0,
+                data_size: 0
             }
         } else {
             File::create(&file_path)?;
@@ -577,7 +595,7 @@ impl<H: Copy + Display + Eq + Hash + Ord + Send + Sync + 'static> TempCache<H> {
         let mut backend_guard = self.backend.lock().unwrap();
 
         match &mut *backend_guard {
-            CacheBackend::InMemory { map, data_size } => {
+            CacheBackend::InMemory{map, data_size} => {
                 for (key, data) in items {
                     if let dashmap::mapref::entry::Entry::Vacant(entry) = map.entry(*key) {
                         entry.insert(data.to_vec());
@@ -588,9 +606,11 @@ impl<H: Copy + Display + Eq + Hash + Ord + Send + Sync + 'static> TempCache<H> {
             CacheBackend::OnDisk {
                 file_path,
                 location_map,
-                current_offset,
+                current_offset
             } => {
-                let mut tmp_file = OpenOptions::new().append(true).open(file_path)?;
+                let mut tmp_file = OpenOptions::new()
+                    .append(true)
+                    .open(file_path)?;
 
                 for (key, data) in items {
                     if !location_map.contains_key(key) {
@@ -598,13 +618,10 @@ impl<H: Copy + Display + Eq + Hash + Ord + Send + Sync + 'static> TempCache<H> {
 
                         tmp_file.write_all(data)?;
 
-                        location_map.insert(
-                            *key,
-                            LocationData {
-                                offset: *current_offset,
-                                length: data_len,
-                            },
-                        );
+                        location_map.insert(*key, LocationData {
+                            offset: *current_offset,
+                            length: data_len,
+                        });
 
                         *current_offset += data_len as u64;
                     }
@@ -614,39 +631,51 @@ impl<H: Copy + Display + Eq + Hash + Ord + Send + Sync + 'static> TempCache<H> {
         Ok(())
     }
 
-    pub fn get_chunks(&self, hashes: &[H]) -> Result<Vec<Vec<u8>>, CliError> {
+    pub fn get_chunks(
+        &self,
+        hashes: &[H],
+    ) -> Result<Vec<Vec<u8>>, CliError>{
         let backend_guard = self.backend.lock().unwrap();
 
         match &*backend_guard {
-            CacheBackend::InMemory { map, .. } => hashes
-                .iter()
-                .map(|hash| {
-                    map.get(hash).map(|r| r.value().clone()).ok_or_else(|| {
-                        CliError::KeyNotFound(format!("Hash {} not found in data_store", hash))
+            CacheBackend::InMemory{map, ..} => {
+                hashes
+                    .iter()
+                    .map(|hash| {
+                        map.get(hash)
+                            .map(|r| r.value().clone())
+                            .ok_or_else(|| CliError::KeyNotFound(format!(
+                                "Hash {} not found in data_store",
+                                hash
+                            )))
                     })
-                })
-                .collect(),
-            CacheBackend::OnDisk {
+                    .collect()
+            }
+            CacheBackend::OnDisk{
                 file_path,
                 location_map,
                 ..
             } => {
                 let mut tmp_file = File::open(file_path)?;
-                let mut ret_chunks: Vec<Vec<u8>> = Vec::with_capacity(hashes.len());
+                let mut ret_chunks: Vec<Vec<u8>> = Vec::with_capacity(
+                    hashes.len()
+                );
 
-                for hash in hashes {
-                    match location_map.get(hash) {
+                for hash in hashes{
+                    match location_map.get(hash){
                         Some(location) => {
-                            let mut data_buffer: Vec<u8> = vec![0; location.length as usize];
+                            let mut data_buffer: Vec<u8> =  vec![
+                                0;
+                                location.length as usize
+                            ];
                             tmp_file.seek(SeekFrom::Start(location.offset))?;
                             tmp_file.read_exact(&mut data_buffer)?;
                             ret_chunks.push(data_buffer)
                         }
                         None => {
-                            return Err(CliError::KeyNotFound(format!(
-                                "Hash {} not found in data_store",
-                                hash
-                            )));
+                            return Err(CliError::KeyNotFound(
+                               format!("Hash {} not found in data_store", hash)
+                            ));
                         }
                     }
                 }
@@ -659,8 +688,17 @@ impl<H: Copy + Display + Eq + Hash + Ord + Send + Sync + 'static> TempCache<H> {
         let backend_guard = self.backend.lock().unwrap();
 
         let mut keys: Vec<H> = match &*backend_guard {
-            CacheBackend::InMemory { map, .. } => map.iter().map(|entry| *entry.key()).collect(),
-            CacheBackend::OnDisk { location_map, .. } => location_map.keys().cloned().collect(),
+            CacheBackend::InMemory{map, ..} => {
+                map.iter()
+                .map(|entry| *entry.key())
+                .collect()
+            }
+            CacheBackend::OnDisk {location_map, ..} => {
+                location_map
+                    .keys()
+                    .cloned()
+                    .collect()
+            }
         };
 
         keys.sort();
@@ -672,26 +710,86 @@ impl<H: Copy + Display + Eq + Hash + Ord + Send + Sync + 'static> TempCache<H> {
         let backend_guard = self.backend.lock().unwrap();
 
         match &*backend_guard {
-            CacheBackend::InMemory { data_size, .. } => *data_size,
-            CacheBackend::OnDisk { current_offset, .. } => *current_offset,
+            CacheBackend::InMemory{data_size, ..} => {
+                *data_size
+            }
+            CacheBackend::OnDisk {current_offset, ..} => {
+                *current_offset
+            }
         }
     }
 }
 
-impl<H: Hash + Eq> Drop for TempCache<H> {
+
+impl <H: Hash + Eq> Drop for TempCache<H> {
     fn drop(&mut self) {
         let backend_guard = self.backend.lock().unwrap();
 
-        if let CacheBackend::OnDisk { file_path, .. } = &*backend_guard
-            && file_path.exists()
+        if let CacheBackend::OnDisk {file_path, .. } = &*backend_guard &&
+            file_path.exists()
         {
             if let Err(e) = remove_file(file_path) {
-                error!("Failed to remove temporary file at {:?}: {}", file_path, e);
+                error!(
+                    "Failed to remove temporary file at {:?}: {}",
+                    file_path, e
+                );
             } else {
-                debug!("Successfully removed temporary file: {:?}", file_path);
+                debug!("Successfully removed temporary file: {:?}",
+                    file_path
+                );
             }
         }
     }
+}
+
+
+/// Reads the entire metadata block (manifest, dictionary, and chunk index)
+/// from an archive file into a single byte vector.
+///
+/// This function leverages the information provided in the `FileHeader` to
+/// determine the starting offset and the total contiguous length of the
+/// metadata block within the archive. It then uses `read_file_data` to
+/// efficiently retrieve this block without loading the entire file into
+/// memory.
+///
+/// The metadata block is contiguous in the file, according to the file
+/// specification, immediately following the header and consisting of the
+/// manifest, dictionary, and chunk index in that order.
+///
+/// # Arguments
+///
+/// * `file_path`: A `Path` pointing to the archive file from which the
+///   metadata block is to be read.
+/// * `header`: A reference to the `sprite_shrink::FileHeader` which contains
+///   the necessary offset and length information for the metadata sections.
+///
+/// # Returns
+///
+/// A `Result` which is:
+/// - `Ok(Vec<u8>)` containing the complete metadata block as a byte vector.
+/// - `Err(CliError)` if the file cannot be opened, seeking fails, or reading
+///   the specified range of bytes encounters an I/O error.
+///
+/// # Errors
+///
+/// This function can return an error primarily if `read_file_data` fails,
+/// which can happen due to:
+/// - `CliError::Io` if the file specified by `file_path` cannot be accessed,
+///   if seeking to `header.man_offset` fails, or if the number of bytes
+///   indicated by `total_length` cannot be read from the file.
+pub fn read_metadata_block(
+    file_path: &Path,
+    ssmc_format_data: &SSMCFormatData
+) -> Result<Vec<u8>, CliError> {
+    let read_start = ssmc_format_data.enc_manifest.offset;
+
+    let read_amount = (
+        ssmc_format_data.enc_manifest.length +
+        ssmc_format_data.data_dictionary.length +
+        ssmc_format_data.enc_chunk_index.length
+    ) as usize;
+
+    read_file_data(file_path, read_start, read_amount)
 }
 
 #[cfg(test)]
@@ -714,8 +812,12 @@ mod tests {
         fs::create_dir(&sub_dir).unwrap();
         write_file(&file_path, b"rom");
 
-        let (files, dirs) =
-            organize_paths(&[file_path.clone(), sub_dir.clone(), missing_path]).unwrap();
+        let (files, dirs) = organize_paths(&[
+            file_path.clone(),
+            sub_dir.clone(),
+            missing_path,
+        ])
+        .unwrap();
 
         assert_eq!(files, vec![file_path]);
         assert_eq!(dirs, vec![sub_dir]);
@@ -763,13 +865,12 @@ mod tests {
     fn temp_cache_in_memory_deduplicates_keys_and_tracks_size() {
         let cache = TempCache::<u64>::new(PathBuf::new(), true).unwrap();
 
-        cache
-            .insert_batch(&[
-                (2, b"bb".to_vec()),
-                (1, b"a".to_vec()),
-                (2, b"ignored".to_vec()),
-            ])
-            .unwrap();
+        cache.insert_batch(&[
+            (2, b"bb".to_vec()),
+            (1, b"a".to_vec()),
+            (2, b"ignored".to_vec()),
+        ])
+        .unwrap();
 
         assert_eq!(cache.get_keys().unwrap(), vec![1, 2]);
         assert_eq!(
@@ -800,51 +901,4 @@ mod tests {
 
         assert!(!cache_path.exists());
     }
-}
-
-/// Reads the entire metadata block (manifest, dictionary, and chunk index)
-/// from an archive file into a single byte vector.
-///
-/// This function leverages the information provided in the `FileHeader` to
-/// determine the starting offset and the total contiguous length of the
-/// metadata block within the archive. It then uses `read_file_data` to
-/// efficiently retrieve this block without loading the entire file into
-/// memory.
-///
-/// The metadata block is contiguous in the file, according to the file
-/// specification, immediately following the header and consisting of the
-/// manifest, dictionary, and chunk index in that order.
-///
-/// # Arguments
-///
-/// * `file_path`: A `Path` pointing to the archive file from which the
-///   metadata block is to be read.
-/// * `header`: A reference to the `sprite_shrink::FileHeader` which contains
-///   the necessary offset and length information for the metadata sections.
-///
-/// # Returns
-///
-/// A `Result` which is:
-/// - `Ok(Vec<u8>)` containing the complete metadata block as a byte vector.
-/// - `Err(CliError)` if the file cannot be opened, seeking fails, or reading
-///   the specified range of bytes encounters an I/O error.
-///
-/// # Errors
-///
-/// This function can return an error primarily if `read_file_data` fails,
-/// which can happen due to:
-/// - `CliError::Io` if the file specified by `file_path` cannot be accessed,
-///   if seeking to `header.man_offset` fails, or if the number of bytes
-///   indicated by `total_length` cannot be read from the file.
-pub fn read_metadata_block(
-    file_path: &Path,
-    ssmc_format_data: &SSMCFormatData,
-) -> Result<Vec<u8>, CliError> {
-    let read_start = ssmc_format_data.enc_manifest.offset;
-
-    let read_amount = (ssmc_format_data.enc_manifest.length
-        + ssmc_format_data.data_dictionary.length
-        + ssmc_format_data.enc_chunk_index.length) as usize;
-
-    read_file_data(file_path, read_start, read_amount)
 }

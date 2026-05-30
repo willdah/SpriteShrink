@@ -5,12 +5,19 @@
 //! all available options and flags, and the validation logic to ensure
 //! that user input is sensible and complete before execution.
 
-use std::{option::Option, path::PathBuf};
+use std::{
+    path::PathBuf,
+    option::Option
+};
 
 use bytesize::ByteSize;
 use clap::{ArgMatches, Parser, parser::ValueSource};
 
-use crate::{cli_types::SpriteShrinkConfig, error_handling::CliError};
+
+use crate::{
+    cli_types::SpriteShrinkConfig,
+    error_handling::CliError
+};
 
 const CUSTOM_HELP_TEMPLATE: &str = "\
 {before-help}{name} {version}
@@ -74,14 +81,14 @@ pub struct Args {
 
     #[arg(
         short,
-        long,
-        help_heading = "Primary Options",
+        long, help_heading = "Primary Options",
         help = "Specifies the index number(s) of the ROM(s) to be \nextracted, \
         as listed by the -m flag."
     )]
     pub extract: Option<String>,
 
     //Tuning paramters
+
     #[arg(
         short = 'c',
         long = "compression-level",
@@ -171,6 +178,7 @@ pub struct Args {
     pub optimize_dictionary: bool,
 
     //Behavior and Output Control
+
     #[arg(
         short,
         long,
@@ -267,7 +275,10 @@ pub struct Args {
 /// - Missing an output path (`-o`) for extraction or compression.
 /// - The output path for compression is a directory.
 /// - Initiating compression with only one input file.
-pub fn validate_args(args: &Args, matches: &ArgMatches) -> Result<(), CliError> {
+pub fn validate_args(
+    args: &Args,
+    matches: &ArgMatches
+) -> Result<(), CliError> {
     let arg_was_provided = |name: &str| matches.contains_id(name);
     //Check if the output file already exists and if the force flag is set.
     if let Some(output_path) = &args.output
@@ -282,10 +293,10 @@ pub fn validate_args(args: &Args, matches: &ArgMatches) -> Result<(), CliError> 
     if args.mode == "optical" && (args.list || args.extract.is_some() || args.metadata) {
         return Err(CliError::ConflictingArguments(
             "The --mode 'optical' flag is only applicable for compression and \
-            cannot be used with --list, --extract, or --metadata."
-                .to_string(),
+            cannot be used with --list, --extract, or --metadata.".to_string(),
         ));
     }
+
 
     //Extraction Mode ROM Index Validation
     if let Some(rom_range) = &args.extract {
@@ -298,22 +309,26 @@ pub fn validate_args(args: &Args, matches: &ArgMatches) -> Result<(), CliError> 
             return Err(CliError::InvalidFormRomRange(
                 "The ROM index range format is invalid. \
                 Use a comma-separated list or a range (e.g., 1,3,5-7)."
-                    .to_string(),
+                .to_string(),
             ));
         }
+
 
         if let Some(output_path) = &args.output
             && !output_path.is_dir()
             && output_path.exists()
         {
             return Err(CliError::InvalidPath(
-                "The output path for extraction must be a directory.".to_string(),
+                "The output path for extraction must be a directory."
+                    .to_string(),
             ));
         }
 
+
         if args.output.is_none() {
             return Err(CliError::MissingFlag(
-                "Output path (-o, --output) is required for extraction.".to_string(),
+                "Output path (-o, --output) is required for extraction."
+                    .to_string(),
             ));
         }
     }
@@ -322,7 +337,8 @@ pub fn validate_args(args: &Args, matches: &ArgMatches) -> Result<(), CliError> 
     if !args.list && !args.metadata && args.extract.is_none() {
         if args.output.is_none() {
             return Err(CliError::MissingFlag(
-                "Output path (-o) is required when in compression mode.".to_string(),
+                "Output path (-o) is required when in compression mode."
+                    .to_string(),
             ));
         }
 
@@ -330,7 +346,7 @@ pub fn validate_args(args: &Args, matches: &ArgMatches) -> Result<(), CliError> 
             && output_path.is_dir()
         {
             return Err(CliError::InvalidPath(
-                "The output path must be a file, not a directory.".to_string(),
+                "The output path must be a file, not a directory.".to_string()
             ));
         }
 
@@ -351,12 +367,14 @@ pub fn validate_args(args: &Args, matches: &ArgMatches) -> Result<(), CliError> 
 
     /*Check if both window and dictionary parameters are specified when
     auto-tune flag is provided.*/
-    if args.auto_tune && arg_was_provided("window") && arg_was_provided("dictionary") {
+    if args.auto_tune &&
+       arg_was_provided("window") &&
+       arg_was_provided("dictionary")
+    {
         return Err(CliError::ConflictingArguments(
-            "When using auto-tune only one, window or dictionary, \
-                    parameters can be used."
-                .to_string(),
-        ));
+                "When using auto-tune only one, window or dictionary, \
+                    parameters can be used.".to_string(),
+            ));
     }
 
     Ok(())
@@ -384,13 +402,15 @@ pub fn validate_args(args: &Args, matches: &ArgMatches) -> Result<(), CliError> 
 ///
 /// An `Args` struct where the final, merged settings are stored. This returned
 /// struct is what the application will use to control its execution.
-pub fn merge_config_and_args(
+pub fn merge_config_and_args (
     config: &SpriteShrinkConfig,
     mut args: Args,
     matches: &ArgMatches,
 ) -> Args {
     //This helper checks if an argument was present on the command line.
-    let arg_was_present = |name: &str| matches.value_source(name) == Some(ValueSource::CommandLine);
+    let arg_was_present = |name: &str| {
+        matches.value_source(name) == Some(ValueSource::CommandLine)
+    };
 
     //If the user did NOT provide a flag, use the value from the config file.
     if !arg_was_present("compression_level") {
@@ -464,11 +484,14 @@ mod tests {
         fs::write(&second, b"b").unwrap();
         let first = first.to_string_lossy().to_string();
         let second = second.to_string_lossy().to_string();
-        let (args, matches) = parse_args(&["sprite-shrink", "-i", &first, "-i", &second]);
+        let (args, matches) =
+            parse_args(&["sprite-shrink", "-i", &first, "-i", &second]);
 
         let err = validate_args(&args, &matches).unwrap_err();
 
-        assert!(matches!(err, CliError::MissingFlag(message) if message.contains("Output path")));
+        assert!(
+            matches!(err, CliError::MissingFlag(message) if message.contains("Output path"))
+        );
     }
 
     #[test]
@@ -479,7 +502,8 @@ mod tests {
         fs::write(&first, b"a").unwrap();
         let first = first.to_string_lossy().to_string();
         let output = output.to_string_lossy().to_string();
-        let (args, matches) = parse_args(&["sprite-shrink", "-i", &first, "-o", &output]);
+        let (args, matches) =
+            parse_args(&["sprite-shrink", "-i", &first, "-o", &output]);
 
         let err = validate_args(&args, &matches).unwrap_err();
 
@@ -515,7 +539,13 @@ mod tests {
         let output = dir.path().join("out.ssmc");
         let missing = missing.to_string_lossy().to_string();
         let output = output.to_string_lossy().to_string();
-        let (args, matches) = parse_args(&["sprite-shrink", "-i", &missing, "-o", &output]);
+        let (args, matches) = parse_args(&[
+            "sprite-shrink",
+            "-i",
+            &missing,
+            "-o",
+            &output,
+        ]);
 
         let err = validate_args(&args, &matches).unwrap_err();
 
@@ -530,7 +560,8 @@ mod tests {
         let first = dir.path().join("a.ssmc");
         fs::write(&first, b"a").unwrap();
         let first = first.to_string_lossy().to_string();
-        let (args, matches) = parse_args(&["sprite-shrink", "-i", &first, "--metadata"]);
+        let (args, matches) =
+            parse_args(&["sprite-shrink", "-i", &first, "--metadata"]);
         let config = SpriteShrinkConfig {
             compression_level: 7,
             window_size: "8KiB".to_string(),

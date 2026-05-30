@@ -5,14 +5,18 @@
 //! header, manifest, and chunk index, which are the core components
 //! needed to locate and extract the contained files.
 
-use std::{collections::HashMap, fmt::Display, path::Path};
+use std::{
+    collections::HashMap,
+    fmt::Display,
+    path::Path,
+};
 
 use bitcode::Decode;
 use serde::Serialize;
 
 use sprite_shrink::{
-    ChunkLocation, FileHeader, FileManifestParent, Hashable, parse_file_chunk_index,
-    parse_file_header, parse_file_metadata,
+    ChunkLocation, FileHeader, FileManifestParent, Hashable,
+    parse_file_chunk_index, parse_file_header, parse_file_metadata,
 };
 
 use crate::error_handling::CliError;
@@ -38,7 +42,11 @@ use crate::storage_io::read_file_data;
 pub fn get_file_header(file_path: &Path) -> Result<FileHeader, CliError> {
     let header_size = FileHeader::HEADER_SIZE as usize;
 
-    let byte_header_data: Vec<u8> = read_file_data(file_path, 0, header_size)?;
+    let byte_header_data: Vec<u8> = read_file_data(
+        file_path,
+        0,
+        header_size
+    )?;
 
     let header: FileHeader = parse_file_header(&byte_header_data)?;
 
@@ -66,7 +74,7 @@ pub fn get_file_header(file_path: &Path) -> Result<FileHeader, CliError> {
 pub fn get_file_manifest<H>(
     file_path: &Path,
     man_offset: u64,
-    man_length: usize,
+    man_length: usize
 ) -> Result<Vec<FileManifestParent<H>>, CliError>
 where
     H: Hashable
@@ -77,7 +85,11 @@ where
         + for<'de> Decode<'de>,
 {
     //Read file manifest from file.
-    let bin_vec_manifest = read_file_data(file_path, man_offset, man_length)?;
+    let bin_vec_manifest = read_file_data(
+        file_path,
+        man_offset,
+        man_length
+    )?;
 
     //Parse it into the required Vec<FileManifestParent> via the library.
     parse_file_metadata(&bin_vec_manifest).map_err(CliError::from)
@@ -100,14 +112,15 @@ where
 /// - `Ok(u8)` containing the max ROM index, which is the file count.
 /// - `Err(CliError)` if the header cannot be read or if the file
 ///   count exceeds the supported limit of 255.
-pub fn get_max_rom_index(file_path: &Path) -> Result<u8, CliError> {
+pub fn get_max_rom_index(file_path: &Path)
+    -> Result<u8, CliError>
+{
     let header = get_file_header(file_path)?;
 
     header.file_count.try_into().map_err(|_| {
         CliError::InternalError(
             "The number of files in the archive exceeds the supported limit of\
-                255."
-                .to_string(),
+                255.".to_string(),
         )
     })
 }
@@ -134,7 +147,7 @@ pub fn get_max_rom_index(file_path: &Path) -> Result<u8, CliError> {
 pub fn get_chunk_index<H>(
     file_path: &Path,
     chunk_index_offset: u64,
-    chunk_index_length: u64,
+    chunk_index_length: u64
 ) -> Result<HashMap<H, ChunkLocation>, CliError>
 where
     H: Hashable
@@ -143,23 +156,38 @@ where
         + Serialize
         + for<'de> serde::Deserialize<'de>
         + for<'de> Decode<'de>,
-{
+    {
     //Read the chunk_index from the file.
-    let bin_vec_chunk_index =
-        read_file_data(file_path, chunk_index_offset, chunk_index_length as usize)?;
+    let bin_vec_chunk_index = read_file_data(
+        file_path,
+        chunk_index_offset,
+        chunk_index_length as usize
+    )?;
 
     //Parse the binary data into a chunk index HashMap and return the value.
-    parse_file_chunk_index(&bin_vec_chunk_index).map_err(CliError::from)
+    parse_file_chunk_index(
+        &bin_vec_chunk_index
+    ).map_err(CliError::from)
 }
 
-pub fn get_toc<T>(file_path: &Path, toc_offset: u32, toc_length: usize) -> Result<Vec<T>, CliError>
+
+pub fn get_toc<T> (
+    file_path: &Path,
+    toc_offset: u32,
+    toc_length: usize
+) -> Result<Vec<T>, CliError>
 where
     T: for<'de> Decode<'de>,
 {
-    let enc_toc_data = read_file_data(file_path, toc_offset as u64, toc_length)?;
+    let enc_toc_data = read_file_data(
+        file_path,
+        toc_offset as u64,
+        toc_length
+    )?;
 
-    bitcode::decode(&enc_toc_data)
-        .map_err(|e| CliError::InternalError(format!("Failed to decode TOC: {}", e)))
+    bitcode::decode(&enc_toc_data).map_err(|e| {
+        CliError::InternalError(format!("Failed to decode TOC: {}", e))
+    })
 }
 
 #[cfg(test)]
@@ -211,7 +239,9 @@ mod tests {
         bytes.extend_from_slice(&encoded);
         let file = write_archive_bytes(&bytes);
 
-        let parsed = get_file_manifest::<u64>(file.path(), offset, encoded.len()).unwrap();
+        let parsed =
+            get_file_manifest::<u64>(file.path(), offset, encoded.len())
+                .unwrap();
 
         assert_eq!(parsed.len(), 1);
         assert_eq!(parsed[0].chunk_count, 1);
@@ -233,7 +263,9 @@ mod tests {
         bytes.extend_from_slice(&encoded);
         let file = write_archive_bytes(&bytes);
 
-        let parsed = get_chunk_index::<u64>(file.path(), offset, encoded.len() as u64).unwrap();
+        let parsed =
+            get_chunk_index::<u64>(file.path(), offset, encoded.len() as u64)
+                .unwrap();
 
         assert_eq!(parsed[&42].offset, 11);
         assert_eq!(parsed[&42].compressed_length, 5);
@@ -251,7 +283,9 @@ mod tests {
         bytes.extend_from_slice(&encoded);
         let file = write_archive_bytes(&bytes);
 
-        let parsed = get_toc::<SSMCTocEntry>(file.path(), offset, encoded.len()).unwrap();
+        let parsed =
+            get_toc::<SSMCTocEntry>(file.path(), offset, encoded.len())
+                .unwrap();
 
         assert_eq!(parsed.len(), 1);
         assert_eq!(parsed[0].filename, "rom.bin");
