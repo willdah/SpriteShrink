@@ -1,4 +1,4 @@
-.PHONY: help build release lint fmt test check clean
+.PHONY: help build release lint fmt test coverage coverage-html check clean
 
 ##@ General
 
@@ -27,6 +27,12 @@ fmt: ## Format all source code
 
 test: ## Run unit tests across the workspace
 	cargo test --workspace
+
+coverage: ## Print workspace code coverage summary
+	cargo llvm-cov --workspace --all-targets --summary-only
+
+coverage-html: ## Generate workspace HTML coverage report
+	cargo llvm-cov --workspace --all-targets --html
 
 check: lint test ## Run lint and test
 
