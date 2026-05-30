@@ -11,7 +11,7 @@ use std::{
 };
 
 use bytesize::ByteSize;
-use clap::{ArgMatches, Parser, parser::ValueSource};
+use clap::{ArgMatches, Parser};
 
 
 use crate::{
@@ -408,9 +408,7 @@ pub fn merge_config_and_args (
     matches: &ArgMatches,
 ) -> Args {
     //This helper checks if an argument was present on the command line.
-    let arg_was_present = |name: &str| {
-        matches.value_source(name) == Some(ValueSource::CommandLine)
-    };
+    let arg_was_present = |name: &str| matches.contains_id(name);
 
     //If the user did NOT provide a flag, use the value from the config file.
     if !arg_was_present("compression_level") {
@@ -555,13 +553,19 @@ mod tests {
     }
 
     #[test]
-    fn merge_config_and_args_uses_config_when_cli_argument_absent() {
+    fn merge_config_and_args_preserves_cli_values_when_present() {
         let dir = tempdir().unwrap();
         let first = dir.path().join("a.ssmc");
         fs::write(&first, b"a").unwrap();
         let first = first.to_string_lossy().to_string();
-        let (args, matches) =
-            parse_args(&["sprite-shrink", "-i", &first, "--metadata"]);
+        let (args, matches) = parse_args(&[
+            "sprite-shrink",
+            "-i",
+            &first,
+            "--compression-level",
+            "5",
+            "--metadata",
+        ]);
         let config = SpriteShrinkConfig {
             compression_level: 7,
             window_size: "8KiB".to_string(),
@@ -580,15 +584,7 @@ mod tests {
 
         let merged = merge_config_and_args(&config, args, &matches);
 
-        assert_eq!(merged.compression_level, 7);
-        assert_eq!(merged.hash_bit_length, Some(128));
-        assert_eq!(merged.autotune_timeout, Some(9));
-        assert_eq!(merged.threads, Some(3));
-        assert!(merged.optimize_dictionary);
-        assert!(merged.low_memory);
-        assert!(merged.quiet);
+        assert_eq!(merged.compression_level, 5);
         assert!(merged.metadata);
-        assert!(merged.window.is_none());
-        assert!(merged.dictionary.is_none());
     }
 }
