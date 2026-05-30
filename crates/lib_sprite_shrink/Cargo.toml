@@ -27,3 +27,6 @@ zstd-sys = { version = "2.0", default-features = false, features = ["experimenta
 
 [build-dependencies]
 cbindgen = "0.29"
+
+[lints]
+workspace = true
